@@ -1,0 +1,10 @@
+{
+  "name": "BuildEstimate",
+  "description": "A mobile-first Business Operating System (BOS) for Indian real estate builders, contractors, and brokers with voice-to-ledger AI parsing, material inventory tracking, and property auto-matching.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

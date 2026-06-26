@@ -1,0 +1,45 @@
+{
+  "profiles": [
+    {
+      "id": "ak-1",
+      "name": "Amit Kumar",
+      "user_role": "Manager",
+      "account_status": "Active"
+    },
+    {
+      "id": "ps-1",
+      "name": "Priya Sharma",
+      "user_role": "Telecaller",
+      "account_status": "Active"
+    },
+    {
+      "id": "rk-1",
+      "name": "Rahul Khan",
+      "user_role": "Supervisor",
+      "account_status": "Active"
+    },
+    {
+      "id": "vj-1",
+      "name": "Vikram Joshi",
+      "user_role": "Manager",
+      "account_status": "Active"
+    },
+    {
+      "id": "owner-1",
+      "name": "Rajesh Singh",
+      "user_role": "Owner",
+      "account_status": "Active"
+    }
+  ],
+  "clients": [],
+  "projects": [],
+  "properties": [],
+  "inbound_revenues": [],
+  "daily_payments": [],
+  "office_expenses": [],
+  "deal_adjustments": [],
+  "material_stocks": [],
+  "vendors": [],
+  "purchase_orders": [],
+  "alerts": []
+}
