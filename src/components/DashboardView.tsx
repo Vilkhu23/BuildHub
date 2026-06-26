@@ -291,6 +291,21 @@ export default function DashboardView({
 
   return (
     <div className="space-y-6">
+      {/* ENTERPRISE BRANDING HEADER AREA */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6 flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">BuildEstimate BOS</h1>
+          <p className="text-xs font-semibold tracking-wider text-emerald-600 mt-1 uppercase">
+            Powered by Karam AI | Innovation HUB
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="bg-slate-900 text-white text-xs px-3 py-1.5 rounded-full font-medium shadow-sm">
+            👑 Workspace {userRole}
+          </span>
+        </div>
+      </div>
+
       {/* Dynamic Project Selection & Control Centre Bar */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-6 rounded-2xl text-white border border-slate-700 shadow-xl space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
