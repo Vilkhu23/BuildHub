@@ -41,6 +41,11 @@ export default function DashboardView({
   };
 
   // Add Project Modal States
+  const [confirmAction, setConfirmAction] = useState<{
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectType, setNewProjectType] = useState("Residential");
@@ -414,9 +419,10 @@ export default function DashboardView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm(`Mark project "${project.project_name}" as Completed?`)) {
-                                  handleStatusChange(project, "Completed", { completion_pct: 100 });
-                                }
+                                setConfirmAction({
+                                  message: `Mark project "${project.project_name}" as Completed?`,
+                                  onConfirm: () => handleStatusChange(project, "Completed", { completion_pct: 100 })
+                                });
                               }}
                               className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded transition-colors flex items-center gap-0.5 shadow-sm"
                             >
@@ -426,9 +432,10 @@ export default function DashboardView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm(`Pause construction work and put "${project.project_name}" On Hold?`)) {
-                                  handleStatusChange(project, "On-Hold");
-                                }
+                                setConfirmAction({
+                                  message: `Pause construction work and put "${project.project_name}" On Hold?`,
+                                  onConfirm: () => handleStatusChange(project, "On-Hold")
+                                });
                               }}
                               className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] rounded transition-colors flex items-center gap-0.5"
                             >
@@ -438,9 +445,10 @@ export default function DashboardView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm(`Mark ongoing project "${project.project_name}" as Dead?`)) {
-                                  handleStatusChange(project, "Dead");
-                                }
+                                setConfirmAction({
+                                  message: `Mark ongoing project "${project.project_name}" as Dead?`,
+                                  onConfirm: () => handleStatusChange(project, "Dead")
+                                });
                               }}
                               className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[10px] rounded transition-colors flex items-center gap-0.5"
                             >
@@ -455,9 +463,10 @@ export default function DashboardView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm(`Resume construction works at "${project.project_name}"?`)) {
-                                  handleStatusChange(project, "Active");
-                                }
+                                setConfirmAction({
+                                  message: `Resume construction works at "${project.project_name}"?`,
+                                  onConfirm: () => handleStatusChange(project, "Active")
+                                });
                               }}
                               className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded transition-colors flex items-center gap-0.5 shadow-sm"
                             >
@@ -467,9 +476,10 @@ export default function DashboardView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm(`Mark on-hold project "${project.project_name}" as Dead?`)) {
-                                  handleStatusChange(project, "Dead");
-                                }
+                                setConfirmAction({
+                                  message: `Mark on-hold project "${project.project_name}" as Dead?`,
+                                  onConfirm: () => handleStatusChange(project, "Dead")
+                                });
                               }}
                               className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[10px] rounded transition-colors flex items-center gap-0.5"
                             >
@@ -483,9 +493,10 @@ export default function DashboardView({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm(`Re-open completed project "${project.project_name}"?`)) {
-                                handleStatusChange(project, "Active");
-                              }
+                              setConfirmAction({
+                                  message: `Re-open completed project "${project.project_name}"?`,
+                                  onConfirm: () => handleStatusChange(project, "Active")
+                              });
                             }}
                             className="px-2 py-1 bg-slate-600 hover:bg-slate-700 text-white font-bold text-[10px] rounded transition-colors flex items-center gap-0.5"
                           >
@@ -547,9 +558,10 @@ export default function DashboardView({
                             <>
                               <button
                                 onClick={() => {
-                                  if (confirm(`Approve and Start construction project for "${project.project_name}"?`)) {
-                                    handleStatusChange(project, "Active");
-                                  }
+                                  setConfirmAction({
+                                    message: `Approve and Start construction project for "${project.project_name}"?`,
+                                    onConfirm: () => handleStatusChange(project, "Active")
+                                  });
                                 }}
                                 className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1 shadow-sm"
                                 title="Approve & Start"
@@ -559,9 +571,10 @@ export default function DashboardView({
                               </button>
                               <button
                                 onClick={() => {
-                                  if (confirm(`Mark quotation "${project.project_name}" as Dead (rejected)?`)) {
-                                    handleStatusChange(project, "Dead");
-                                  }
+                                  setConfirmAction({
+                                    message: `Mark quotation "${project.project_name}" as Dead (rejected)?`,
+                                    onConfirm: () => handleStatusChange(project, "Dead")
+                                  });
                                 }}
                                 className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-lg transition-colors flex items-center gap-1"
                                 title="Mark Dead / Rejected"
@@ -575,9 +588,10 @@ export default function DashboardView({
                           {project.status === "Dead" && (
                             <button
                               onClick={() => {
-                                if (confirm(`Revive quotation/proposal for "${project.project_name}"?`)) {
-                                  handleStatusChange(project, "Quotation");
-                                }
+                                setConfirmAction({
+                                  message: `Revive quotation/proposal for "${project.project_name}"?`,
+                                  onConfirm: () => handleStatusChange(project, "Quotation")
+                                });
                               }}
                               className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1"
                             >
@@ -752,6 +766,41 @@ export default function DashboardView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modern custom confirmation modal overlay */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-slate-200 transform scale-100 transition-all space-y-4">
+            <div className="flex items-center gap-3 text-slate-800">
+              <span className="material-symbols-outlined text-3xl text-amber-500 font-bold">warning</span>
+              <div>
+                <h4 className="font-extrabold text-slate-900 text-sm tracking-wider uppercase">Confirm Action</h4>
+                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Verification Required</p>
+              </div>
+            </div>
+            <p className="text-xs font-semibold text-slate-600 leading-relaxed">
+              {confirmAction.message}
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  confirmAction.onConfirm();
+                  setConfirmAction(null);
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-md transition-all"
+              >
+                Yes, Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}

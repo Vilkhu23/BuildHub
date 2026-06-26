@@ -13,6 +13,11 @@ interface LineItem {
 }
 
 export default function EstimatesView({ projects, onAddLog, onUpdateProject }: EstimatesViewProps) {
+  const [confirmAction, setConfirmAction] = useState<{
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   // Category expanded state
   const [expandedCategories, setExpandedCategories] = useState<{ [key: string]: boolean }>({
     civil: true,
@@ -664,10 +669,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                 <>
                   <button
                     onClick={() => {
-                      if (confirm(`Are you sure you want to approve this quotation and start construction for "${selectedProject.project_name}"?`)) {
-                        onUpdateProject({ ...selectedProject, status: "Active" });
-                        onAddLog(`Quotation for "${selectedProject.project_name}" was approved by client! Starting construction phase.`);
-                      }
+                      setConfirmAction({
+                        message: `Are you sure you want to approve this quotation and start construction for "${selectedProject.project_name}"?`,
+                        onConfirm: () => {
+                          onUpdateProject({ ...selectedProject, status: "Active" });
+                          onAddLog(`Quotation for "${selectedProject.project_name}" was approved by client! Starting construction phase.`);
+                        }
+                      });
                     }}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5"
                   >
@@ -676,10 +684,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(`Mark quotation "${selectedProject.project_name}" as Dead (rejected)?`)) {
-                        onUpdateProject({ ...selectedProject, status: "Dead" });
-                        onAddLog(`Quotation for "${selectedProject.project_name}" was marked as Dead/Rejected.`);
-                      }
+                      setConfirmAction({
+                        message: `Mark quotation "${selectedProject.project_name}" as Dead (rejected)?`,
+                        onConfirm: () => {
+                          onUpdateProject({ ...selectedProject, status: "Dead" });
+                          onAddLog(`Quotation for "${selectedProject.project_name}" was marked as Dead/Rejected.`);
+                        }
+                      });
                     }}
                     className="px-3 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 font-bold text-xs rounded-lg transition-all"
                   >
@@ -692,10 +703,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                 <>
                   <button
                     onClick={() => {
-                      if (confirm(`Mark project "${selectedProject.project_name}" as Completed?`)) {
-                        onUpdateProject({ ...selectedProject, status: "Completed" });
-                        onAddLog(`Marked project "${selectedProject.project_name}" as Completed.`);
-                      }
+                      setConfirmAction({
+                        message: `Mark project "${selectedProject.project_name}" as Completed?`,
+                        onConfirm: () => {
+                          onUpdateProject({ ...selectedProject, status: "Completed" });
+                          onAddLog(`Marked project "${selectedProject.project_name}" as Completed.`);
+                        }
+                      });
                     }}
                     className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5"
                   >
@@ -704,10 +718,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(`Pause construction work and put "${selectedProject.project_name}" On Hold?`)) {
-                        onUpdateProject({ ...selectedProject, status: "On-Hold" });
-                        onAddLog(`Put project "${selectedProject.project_name}" on hold.`);
-                      }
+                      setConfirmAction({
+                        message: `Pause construction work and put "${selectedProject.project_name}" On Hold?`,
+                        onConfirm: () => {
+                          onUpdateProject({ ...selectedProject, status: "On-Hold" });
+                          onAddLog(`Put project "${selectedProject.project_name}" on hold.`);
+                        }
+                      });
                     }}
                     className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1.5"
                   >
@@ -716,10 +733,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(`Convert "${selectedProject.project_name}" back into a pre-sale Quotation/Proposal stage?`)) {
-                        onUpdateProject({ ...selectedProject, status: "Quotation" });
-                        onAddLog(`Moved "${selectedProject.project_name}" back to pre-sale Quotation phase.`);
-                      }
+                      setConfirmAction({
+                        message: `Convert "${selectedProject.project_name}" back into a pre-sale Quotation/Proposal stage?`,
+                        onConfirm: () => {
+                          onUpdateProject({ ...selectedProject, status: "Quotation" });
+                          onAddLog(`Moved "${selectedProject.project_name}" back to pre-sale Quotation phase.`);
+                        }
+                      });
                     }}
                     className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg transition-all"
                   >
@@ -727,10 +747,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(`Mark ongoing project "${selectedProject.project_name}" as Dead (cancelled)?`)) {
-                        onUpdateProject({ ...selectedProject, status: "Dead" });
-                        onAddLog(`Marked ongoing project "${selectedProject.project_name}" as Dead.`);
-                      }
+                      setConfirmAction({
+                        message: `Mark ongoing project "${selectedProject.project_name}" as Dead (cancelled)?`,
+                        onConfirm: () => {
+                          onUpdateProject({ ...selectedProject, status: "Dead" });
+                          onAddLog(`Marked ongoing project "${selectedProject.project_name}" as Dead.`);
+                        }
+                      });
                     }}
                     className="px-3 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 font-bold text-xs rounded-lg transition-all"
                   >
@@ -743,10 +766,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                 <>
                   <button
                     onClick={() => {
-                      if (confirm(`Resume construction works at "${selectedProject.project_name}"?`)) {
-                        onUpdateProject({ ...selectedProject, status: "Active" });
-                        onAddLog(`Resumed construction works at "${selectedProject.project_name}".`);
-                      }
+                      setConfirmAction({
+                        message: `Resume construction works at "${selectedProject.project_name}"?`,
+                        onConfirm: () => {
+                          onUpdateProject({ ...selectedProject, status: "Active" });
+                          onAddLog(`Resumed construction works at "${selectedProject.project_name}".`);
+                        }
+                      });
                     }}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5"
                   >
@@ -755,10 +781,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(`Convert on-hold project "${selectedProject.project_name}" back to pre-sale Quotation phase?`)) {
-                        onUpdateProject({ ...selectedProject, status: "Quotation" });
-                        onAddLog(`Moved "${selectedProject.project_name}" back to pre-sale Quotation phase.`);
-                      }
+                      setConfirmAction({
+                        message: `Convert on-hold project "${selectedProject.project_name}" back to pre-sale Quotation phase?`,
+                        onConfirm: () => {
+                          onUpdateProject({ ...selectedProject, status: "Quotation" });
+                          onAddLog(`Moved "${selectedProject.project_name}" back to pre-sale Quotation phase.`);
+                        }
+                      });
                     }}
                     className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg transition-all"
                   >
@@ -766,10 +795,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(`Mark on-hold project "${selectedProject.project_name}" as Dead (cancelled)?`)) {
-                        onUpdateProject({ ...selectedProject, status: "Dead" });
-                        onAddLog(`Marked on-hold project "${selectedProject.project_name}" as Dead.`);
-                      }
+                      setConfirmAction({
+                        message: `Mark on-hold project "${selectedProject.project_name}" as Dead (cancelled)?`,
+                        onConfirm: () => {
+                          onUpdateProject({ ...selectedProject, status: "Dead" });
+                          onAddLog(`Marked on-hold project "${selectedProject.project_name}" as Dead.`);
+                        }
+                      });
                     }}
                     className="px-3 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 font-bold text-xs rounded-lg transition-all"
                   >
@@ -794,10 +826,13 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
               {selectedProject.status === "Completed" && (
                 <button
                   onClick={() => {
-                    if (confirm(`Re-open completed project "${selectedProject.project_name}"?`)) {
-                      onUpdateProject({ ...selectedProject, status: "Active" });
-                      onAddLog(`Re-opened completed project "${selectedProject.project_name}".`);
-                    }
+                    setConfirmAction({
+                      message: `Re-open completed project "${selectedProject.project_name}"?`,
+                      onConfirm: () => {
+                        onUpdateProject({ ...selectedProject, status: "Active" });
+                        onAddLog(`Re-opened completed project "${selectedProject.project_name}".`);
+                      }
+                    });
                   }}
                   className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5"
                 >
@@ -953,9 +988,10 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm(`Are you sure you want to delete "${item.name}"?`)) {
-                                handleDeleteLineItem("civil", idx);
-                              }
+                              setConfirmAction({
+                                message: `Are you sure you want to delete "${item.name}"?`,
+                                onConfirm: () => handleDeleteLineItem("civil", idx)
+                              });
                             }}
                             className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600 transition-colors"
                             title="Delete Item"
@@ -1040,9 +1076,10 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm(`Are you sure you want to delete "${item.name}"?`)) {
-                                handleDeleteLineItem("electrical", idx);
-                              }
+                              setConfirmAction({
+                                message: `Are you sure you want to delete "${item.name}"?`,
+                                onConfirm: () => handleDeleteLineItem("electrical", idx)
+                              });
                             }}
                             className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600 transition-colors"
                             title="Delete Item"
@@ -1133,9 +1170,10 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm(`Are you sure you want to delete "${item.name}"?`)) {
-                                handleDeleteLineItem("finishes", idx);
-                              }
+                              setConfirmAction({
+                                message: `Are you sure you want to delete "${item.name}"?`,
+                                onConfirm: () => handleDeleteLineItem("finishes", idx)
+                              });
                             }}
                             className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600 transition-colors"
                             title="Delete Item"
@@ -1349,11 +1387,14 @@ BuildEstimate Inc.
               {selectedProject?.status === "Quotation" && (
                 <button
                   onClick={() => {
-                    if (confirm(`Are you sure you want to approve this quotation and start construction for "${selectedProject.project_name}"?`)) {
-                      onUpdateProject({ ...selectedProject, status: "Active" });
-                      onAddLog(`Quotation for "${selectedProject.project_name}" was approved by client! Starting construction phase.`);
-                      setIsQuoteModalOpen(false);
-                    }
+                    setConfirmAction({
+                      message: `Are you sure you want to approve this quotation and start construction for "${selectedProject.project_name}"?`,
+                      onConfirm: () => {
+                        onUpdateProject({ ...selectedProject, status: "Active" });
+                        onAddLog(`Quotation for "${selectedProject.project_name}" was approved by client! Starting construction phase.`);
+                        setIsQuoteModalOpen(false);
+                      }
+                    });
                   }}
                   className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow transition-all active:scale-[0.98]"
                 >
@@ -1427,6 +1468,41 @@ BuildEstimate Inc.
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modern custom confirmation modal overlay */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-slate-200 transform scale-100 transition-all space-y-4">
+            <div className="flex items-center gap-3 text-slate-800">
+              <span className="material-symbols-outlined text-3xl text-amber-500 font-bold">warning</span>
+              <div>
+                <h4 className="font-extrabold text-slate-900 text-sm tracking-wider uppercase">Confirm Action</h4>
+                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Verification Required</p>
+              </div>
+            </div>
+            <p className="text-xs font-semibold text-slate-600 leading-relaxed">
+              {confirmAction.message}
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  confirmAction.onConfirm();
+                  setConfirmAction(null);
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-md transition-all"
+              >
+                Yes, Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}
