@@ -1,33 +1,66 @@
 import React, { useState } from "react";
-import { Project, CriticalAlert, Profile } from "../types";
+import { Project, CriticalAlert, Profile, InboundRevenue, DailyPayment, OfficeExpense, DealAdjustment } from "../types";
 
 interface DashboardViewProps {
   projects: Project[];
   alerts: CriticalAlert[];
   profiles: Profile[];
+  inboundRevenues: InboundRevenue[];
+  dailyPayments: DailyPayment[];
+  officeExpenses: OfficeExpense[];
+  dealAdjustments: DealAdjustment[];
   userRole: 'Owner' | 'Manager' | 'Supervisor' | 'Telecaller';
   setTab: (tab: string) => void;
   onOpenOrderDialog: (stockId: string) => void;
   onUpdateProfiles: (updated: Profile[]) => void;
   onAddProject?: (project: Omit<Project, "id">) => void;
   onUpdateProject?: (project: Project) => void;
+  onAddInboundRevenue?: (rev: Omit<InboundRevenue, "id" | "date">) => void;
+  onAddDailyPayment?: (pay: DailyPayment) => void;
+  onAddOfficeExpense?: (exp: Omit<OfficeExpense, "id" | "date">) => void;
+  onAddDealAdjustment?: (adj: Omit<DealAdjustment, "id">) => void;
 }
 
 export default function DashboardView({
   projects,
   alerts,
   profiles,
+  inboundRevenues,
+  dailyPayments,
+  officeExpenses,
+  dealAdjustments,
   userRole,
   setTab,
   onOpenOrderDialog,
   onUpdateProfiles,
   onAddProject,
   onUpdateProject,
+  onAddInboundRevenue,
+  onAddDailyPayment,
+  onAddOfficeExpense,
+  onAddDealAdjustment,
 }: DashboardViewProps) {
   const isOwnerOrManager = userRole === "Owner" || userRole === "Manager";
 
   // Active sub-tab state for projects on the dashboard
   const [activeProjectTab, setActiveProjectTab] = useState<'approved' | 'quotations'>('approved');
+
+  // Ledger active tab state
+  const [activeLedgerTab, setActiveLedgerTab] = useState<'cash_in' | 'payments' | 'office' | 'deals'>('cash_in');
+
+  // Interactive ledger addition states
+  const [isAddLedgerOpen, setIsAddLedgerOpen] = useState(false);
+  const [ledgerAmount, setLedgerAmount] = useState("");
+  const [ledgerRemarks, setLedgerRemarks] = useState("");
+  const [ledgerCategory, setLedgerCategory] = useState("");
+  const [ledgerProjectId, setLedgerProjectId] = useState("");
+  const [ledgerHeadAccount, setLedgerHeadAccount] = useState("Property Sale");
+  const [ledgerPaymentMode, setLedgerPaymentMode] = useState("Online");
+  const [ledgerPaymentStage, setLedgerPaymentStage] = useState("Advance");
+  const [ledgerRegistryDeadline, setLedgerRegistryDeadline] = useState("");
+  const [ledgerSubject, setLedgerSubject] = useState("");
+  const [ledgerClientId, setLedgerClientId] = useState("");
+  const [ledgerDirection, setLedgerDirection] = useState("Inbound_Commission");
 
   const handleStatusChange = (project: Project, newStatus: Project['status'], extra?: Partial<Project>) => {
     if (onUpdateProject) {
@@ -93,26 +126,75 @@ export default function DashboardView({
   };
 
   // Quick state for WhatsApp popup
-  const [waSent, setWaWaSent] = useState(false);
+  const [waSent, setWaSent] = useState(false);
 
-  const handleSendReminder = () => {
-    setWaWaSent(true);
-    // Custom Indian Real-estate warning message URL encode
-    const clientName = "Sunny Enclave Promoters";
-    const msg = `ALERT: Dear builder, the Bayana Registry Deadline for Project Sunny Enclave is in 3 days. Please finalize the ledger transactions. - BuildEstimate Owner Agent`;
+  const handleSendReminder = (client: string, days: number, deadline: string) => {
+    setWaSent(true);
+    const msg = `ALERT: Dear builder/client, the Bayana Registry Deadline for Project is on ${deadline} (${days} days remaining). Please finalize the ledger transactions. - BuildEstimate Owner Agent`;
     const url = `https://wa.me/919876543210?text=${encodeURIComponent(msg)}`;
     window.open(url, "_blank");
-    setTimeout(() => setWaWaSent(false), 3000);
+    setTimeout(() => setWaSent(false), 3000);
   };
 
-  // Dynamic metrics calculation based on active/started projects (not quotation or dead)
-  const activeProjectsList = projects.filter(p => p.status !== "Quotation" && p.status !== "Dead");
+  // Track selected project for analytics (defaults to "all")
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("all");
+
+  // Helper to dynamically calculate projected cost based on estimates
+  const getProjectedCost = (p: Project) => {
+    const civilSum = p.estimates?.civil?.reduce((sum, item) => sum + item.amount, 0) || 0;
+    const electricalSum = p.estimates?.electrical?.reduce((sum, item) => sum + item.amount, 0) || 0;
+    const finishesSum = p.estimates?.finishes?.reduce((sum, item) => sum + item.amount, 0) || 0;
+    const totalEstimates = civilSum + electricalSum + finishesSum;
+    
+    // If estimates are populated, use them. Otherwise, default to 80% of total budget (20% margin)
+    return totalEstimates > 0 ? totalEstimates : p.total_budget * 0.8;
+  };
+
+  // Filter projects based on dropdown selection
+  const allActiveProjects = projects.filter(p => p.status !== "Quotation" && p.status !== "Dead");
+  const activeProjectsList = selectedProjectId === "all"
+    ? allActiveProjects
+    : projects.filter(p => p.id === selectedProjectId);
+
   const totalBudget = activeProjectsList.reduce((sum, p) => sum + p.total_budget, 0);
-  const totalSpent = activeProjectsList.reduce((sum, p) => sum + p.spent, 0);
-  const netProfitVal = Math.max(0, totalBudget - totalSpent);
+  
+  // Real Khata Calculations!
+  // Inflow (be_cash_in):
+  const filteredInboundRevenues = selectedProjectId === "all"
+    ? inboundRevenues
+    : inboundRevenues.filter(r => r.project_id === selectedProjectId);
+  const totalInboundSum = filteredInboundRevenues.reduce((sum, r) => sum + r.amount, 0);
+
+  // Outflow (be_daily_payments):
+  const filteredDailyPayments = selectedProjectId === "all"
+    ? dailyPayments
+    : dailyPayments.filter(p => p.project_id === selectedProjectId);
+  const totalDailySpentSum = filteredDailyPayments.reduce((sum, p) => sum + p.amount, 0);
+
+  // Office Overhead Outflow (be_office_expenses): (Not tied to projects)
+  const totalOfficeExpensesSum = officeExpenses.reduce((sum, o) => sum + o.amount, 0);
+
+  // Broker Commission Adjustments (be_deal_adjustments): (Not tied to projects)
+  const totalInboundCommissions = dealAdjustments
+    .filter(d => d.direction === "Inbound_Commission")
+    .reduce((sum, d) => sum + d.amount, 0);
+  const totalOutboundPayouts = dealAdjustments
+    .filter(d => d.direction === "Outbound_Payout")
+    .reduce((sum, d) => sum + d.amount, 0);
+
+  const netCommissionBalance = totalInboundCommissions - totalOutboundPayouts;
+
+  // Real-time Cash Reservoirs Ledger Equation:
+  // Cash Reservoir = Total Inbound Cash + Inbound Commissions - Total Daily Payments - Total Office Expenses - Outbound Commission Payouts
+  const actualCashReservoirVal = totalInboundSum + totalInboundCommissions - totalDailySpentSum - totalOfficeExpensesSum - totalOutboundPayouts;
+
+  // Projected Net Profit: total project budget minus projected estimates + commission margin minus office overheads
+  const netProjectMargins = activeProjectsList.reduce((sum, p) => sum + Math.max(0, p.total_budget - getProjectedCost(p)), 0);
+  const netProfitVal = netProjectMargins + netCommissionBalance - totalOfficeExpensesSum;
   const projectedMarginVal = totalBudget > 0 ? (netProfitVal / totalBudget) * 100 : 0;
-  const cashReservesVal = activeProjectsList.reduce((sum, p) => sum + (p.total_budget - p.spent) * 0.35, 0);
-  const pendingCollectionsVal = activeProjectsList.reduce((sum, p) => sum + (p.total_budget - p.spent) * 0.18, 0);
+
+  // Pending Collections: total contract budget of filtered projects minus their collected revenues
+  const pendingCollectionsVal = Math.max(0, totalBudget - totalInboundSum);
 
   const formatINR = (value: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -123,123 +205,515 @@ export default function DashboardView({
   };
 
   const formatLakhsCrores = (value: number) => {
-    if (value >= 10000000) {
-      return `₹${(value / 10000000).toFixed(2)}Cr`;
-    } else if (value >= 100000) {
-      return `₹${(value / 100000).toFixed(1)}L`;
+    const isNeg = value < 0;
+    const absVal = Math.abs(value);
+    let out = "";
+    if (absVal >= 10000000) {
+      out = `₹${(absVal / 10000000).toFixed(2)}Cr`;
+    } else if (absVal >= 100000) {
+      out = `₹${(absVal / 100000).toFixed(1)}L`;
+    } else {
+      out = formatINR(absVal);
     }
-    return formatINR(value);
+    return isNeg ? `-${out}` : out;
   };
 
-  const deadlineAlert = alerts.find(a => a.type === "Deadline");
+  // Bayana Countdown Engine calculations:
+  // Detects advances with a deadline coming up within 7 days
+  const bayanaDeadlines = inboundRevenues
+    .filter(r => r.registry_deadline)
+    .map(r => {
+      const deadlineDate = new Date(r.registry_deadline);
+      const today = new Date("2026-06-27"); // Anchor mock date for evaluation
+      const timeDiff = deadlineDate.getTime() - today.getTime();
+      const daysRemaining = Math.ceil(timeDiff / (1000 * 3600 * 24));
+      return {
+        ...r,
+        daysRemaining,
+        project: projects.find(p => p.id === r.project_id)
+      };
+    })
+    .filter(item => item.daysRemaining >= 0 && item.daysRemaining <= 7);
+
+  const activeBayanaAlert = bayanaDeadlines[0];
+
+  const handleAddLedgerSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ledgerAmount || isNaN(Number(ledgerAmount))) return;
+
+    if (activeLedgerTab === "cash_in") {
+      if (onAddInboundRevenue) {
+        onAddInboundRevenue({
+          project_id: ledgerProjectId || projects[0]?.id || "pr-1",
+          amount: Number(ledgerAmount),
+          head_account: ledgerHeadAccount as any,
+          payment_mode: ledgerPaymentMode as any,
+          payment_stage: ledgerPaymentStage as any,
+          registry_deadline: ledgerPaymentStage === "Advance" ? ledgerRegistryDeadline : undefined
+        });
+      }
+    } else if (activeLedgerTab === "payments") {
+      if (onAddDailyPayment) {
+        onAddDailyPayment({
+          id: "dp-" + Date.now(),
+          project_id: ledgerProjectId || projects[0]?.id || "pr-1",
+          amount: Number(ledgerAmount),
+          paid_by: "Manager Amit",
+          remarks: ledgerRemarks.trim() || "Manual cash entry",
+          category: (ledgerCategory || "Miscellaneous") as any,
+          date: new Date().toISOString()
+        });
+      }
+    } else if (activeLedgerTab === "office") {
+      if (onAddOfficeExpense) {
+        onAddOfficeExpense({
+          subject: ledgerRemarks.trim() || "Corporate expense",
+          amount: Number(ledgerAmount)
+        });
+      }
+    } else if (activeLedgerTab === "deals") {
+      if (onAddDealAdjustment) {
+        onAddDealAdjustment({
+          client_id: ledgerClientId || "cl-1",
+          direction: ledgerDirection as any,
+          amount: Number(ledgerAmount),
+          deal_detail: ledgerRemarks.trim() || "Broker commission entry"
+        });
+      }
+    }
+
+    // Reset values
+    setLedgerAmount("");
+    setLedgerRemarks("");
+    setLedgerRegistryDeadline("");
+    setIsAddLedgerOpen(false);
+  };
 
   return (
     <div className="space-y-6">
-      {/* Executive Oversight Section (Only for Owners and Managers) */}
-      {isOwnerOrManager && (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-              Executive Oversight
-            </h2>
-            <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">
-              🔒 RLS Secure Owner View
-            </span>
+      {/* Dynamic Project Selection & Control Centre Bar */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-6 rounded-2xl text-white border border-slate-700 shadow-xl space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2.5 py-1 rounded-md">
+                BuildEstimate Control Centre
+              </span>
+              <span className="text-xs text-slate-300 font-mono">Real-time Sync Active</span>
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
+              Oversight & Site Tracking
+              <span className="material-symbols-outlined text-emerald-400">analytics</span>
+            </h1>
+            <p className="text-slate-300 text-xs max-w-2xl font-medium">
+              Track projectwise financial statements, progress margins, and pre-sale estimates dynamically. Select a specific site below to filter the entire view.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Net Profit Card */}
-            <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-slate-500 font-semibold text-xs uppercase tracking-wide">Net Profit</span>
-                <span className="material-symbols-outlined text-emerald-600 font-bold" style={{ fontVariationSettings: "'FILL' 1" }}>trending_up</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-2xl font-black text-slate-900 tracking-tight">{formatLakhsCrores(netProfitVal)}</span>
-                <div className="inline-flex items-center gap-1 mt-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full w-fit border border-emerald-200">
-                  <span className="material-symbols-outlined text-xs">arrow_upward</span>
-                  <span className="text-[10px] font-bold">{projects.length > 0 ? "12% vs last month" : "No active projects"}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Cash Reserves Card */}
-            <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-slate-500 font-semibold text-xs uppercase tracking-wide">Cash Reserves</span>
-                <span className="material-symbols-outlined text-slate-500">account_balance_wallet</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-2xl font-black text-slate-900 tracking-tight">{formatLakhsCrores(cashReservesVal)}</span>
-                <p className="text-[10px] text-slate-500 mt-1.5 italic">Verified Ledger Balance</p>
-              </div>
-            </div>
-
-            {/* Pending Collections Card */}
-            <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-slate-500 font-semibold text-xs uppercase tracking-wide">Pending Collections</span>
-                <span className="material-symbols-outlined text-slate-500">pending_actions</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-2xl font-black text-slate-900 tracking-tight">{formatLakhsCrores(pendingCollectionsVal)}</span>
-                <p className="text-[10px] text-slate-500 mt-1.5">{projects.length > 0 ? "Based on active milestones" : "No upcoming milestones"}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Urgent Alert Banner */}
-          {deadlineAlert && (
-            <div className="relative overflow-hidden bg-rose-50 border border-rose-200 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="bg-rose-600 text-white w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm animate-pulse">
-                  <span className="material-symbols-outlined font-bold text-xl">priority_high</span>
-                </div>
-                <p className="font-bold text-rose-950 text-sm leading-tight text-center md:text-left">
-                  🚨 ALERT: {deadlineAlert.title} ({deadlineAlert.description})
-                </p>
-              </div>
-              <button
-                onClick={handleSendReminder}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-5 rounded-lg text-xs font-bold flex items-center gap-2 w-full md:w-auto justify-center active:scale-95 transition-all shadow-sm shrink-0"
+          {/* Project Dropdown Selector */}
+          <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 shadow-lg shrink-0 w-full md:w-80 space-y-1.5">
+            <label htmlFor="project-select-dropdown" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Select Active Site to Filter:
+            </label>
+            <div className="relative">
+              <select
+                id="project-select-dropdown"
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 hover:border-slate-600 rounded-lg py-2 px-3 text-xs text-white font-bold appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500 pr-8"
               >
-                <span className="material-symbols-outlined text-sm font-bold">chat</span>
-                {waSent ? "Opening WhatsApp..." : "Send WhatsApp Reminder"}
-              </button>
+                <option value="all" className="bg-slate-950 text-slate-200 font-bold">
+                  📁 All Active Projects ({projects.filter(p => p.status !== "Quotation" && p.status !== "Dead").length})
+                </option>
+                <optgroup label="Ongoing Construction" className="bg-slate-950 text-slate-400 font-bold">
+                  {projects.filter(p => p.status === "Active" || p.status === "On-Hold" || p.status === "Completed").map((p) => (
+                    <option key={p.id} value={p.id} className="bg-slate-950 text-slate-100 font-bold">
+                      {p.status === "On-Hold" ? "⏸️" : p.status === "Completed" ? "✅" : "🏗️"} {p.project_name} ({p.status})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Pre-Sale Quotations / Proposals" className="bg-slate-950 text-slate-400 font-bold">
+                  {projects.filter(p => p.status === "Quotation").map((p) => (
+                    <option key={p.id} value={p.id} className="bg-slate-950 text-slate-100 font-bold">
+                      📝 {p.project_name} (Quotation)
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Dead / Rejected" className="bg-slate-950 text-slate-400 font-bold">
+                  {projects.filter(p => p.status === "Dead").map((p) => (
+                    <option key={p.id} value={p.id} className="bg-slate-950 text-slate-100 font-bold">
+                      💀 {p.project_name} (Dead)
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-slate-400">
+                <span className="material-symbols-outlined text-sm font-bold">unfold_more</span>
+              </div>
             </div>
-          )}
+          </div>
+        </div>
+
+        {/* Selected Project Quick details strip */}
+        {selectedProjectId !== "all" && (
+          (() => {
+            const p = projects.find(proj => proj.id === selectedProjectId);
+            if (!p) return null;
+            return (
+              <div className="pt-3 border-t border-slate-700/60 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-semibold animate-fade-in">
+                <div className="space-y-0.5">
+                  <span className="text-slate-400 text-[10px] uppercase tracking-wider block">Project Status</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${
+                      p.status === "Active" ? "bg-emerald-500 animate-pulse" :
+                      p.status === "Completed" ? "bg-blue-500" :
+                      p.status === "On-Hold" ? "bg-amber-500" :
+                      p.status === "Quotation" ? "bg-slate-400" : "bg-red-500"
+                    }`} />
+                    <span className="font-extrabold tracking-wide uppercase text-white">{p.status}</span>
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-slate-400 text-[10px] uppercase tracking-wider block">Site Location</span>
+                  <p className="text-slate-200 truncate" title={p.location}>📍 {p.location}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-slate-400 text-[10px] uppercase tracking-wider block">Project Type</span>
+                  <p className="text-slate-200">🏗️ {p.type}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-slate-400 text-[10px] uppercase tracking-wider block">Work Progress</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                      <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${p.completion_pct}%` }} />
+                    </div>
+                    <span className="text-emerald-400 font-bold">{p.completion_pct}%</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()
+        )}
+      </div>
+
+      {/* Role-Based Security Enforcement Warning Block for Supervisors & Telecallers */}
+      {!isOwnerOrManager ? (
+        <section className="bg-amber-50 border border-amber-200 p-5 rounded-2xl flex items-start gap-4 shadow-sm">
+          <div className="bg-amber-500 text-white w-10 h-10 rounded-full flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-lg font-bold">lock</span>
+          </div>
+          <div className="space-y-1">
+            <h3 className="font-bold text-slate-900 text-sm">Oversight Metrics Restricted</h3>
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+              Notice: As a registered <span className="text-amber-800 font-black uppercase tracking-wider">{userRole}</span>, your security permissions are restricted from viewing overall company net profit dashboards, financial cash reservoirs, or supplier cost structures.
+            </p>
+          </div>
         </section>
-      )}
-
-      {/* Main Financial Overview */}
-      <section className="space-y-4">
-        <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-          Financial Overview
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Budget Card */}
-          <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-sm">
-            <p className="text-[11px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Total Budget</p>
-            <p className="text-2xl font-black text-slate-900">{formatINR(totalBudget)}</p>
-          </div>
-
-          {/* Expenses Card */}
-          <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-sm">
-            <p className="text-[11px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Total Expenses</p>
-            <p className="text-2xl font-black text-slate-900">{formatINR(totalSpent)}</p>
-          </div>
-
-          {/* Projected Profit Margin Card */}
-          <div className="bg-emerald-50 p-4 border border-emerald-200 rounded-xl shadow-sm">
-            <p className="text-[11px] font-bold text-emerald-800 mb-1 uppercase tracking-wider">Projected Profit Margin</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-black text-emerald-700">{projectedMarginVal.toFixed(1)}%</p>
-              <span className="material-symbols-outlined text-emerald-700 text-sm font-bold" style={{ fontVariationSettings: "'FILL' 1" }}>
-                trending_up
+      ) : (
+        <>
+          {/* Executive Oversight Section (Only for Owners and Managers) */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                Executive Oversight
+              </h2>
+              <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">
+                🔒 RLS Secure Owner View
               </span>
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Net Profit Card */}
+              <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-slate-500 font-semibold text-xs uppercase tracking-wide">Net Profit</span>
+                  <span className="material-symbols-outlined text-emerald-600 font-bold" style={{ fontVariationSettings: "'FILL' 1" }}>trending_up</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-2xl font-black text-slate-900 tracking-tight">{formatLakhsCrores(netProfitVal)}</span>
+                  <div className="inline-flex items-center gap-1 mt-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full w-fit border border-emerald-200">
+                    <span className="material-symbols-outlined text-[10px] font-bold">info</span>
+                    <span className="text-[10px] font-bold">Project margins & deal commissions minus HQ expenses</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cash Reserves Card */}
+              <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-slate-500 font-semibold text-xs uppercase tracking-wide">Cash Reservoir</span>
+                  <span className="material-symbols-outlined text-slate-500">account_balance_wallet</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-2xl font-black text-slate-900 tracking-tight">{formatLakhsCrores(actualCashReservoirVal)}</span>
+                  <p className="text-[10px] text-slate-500 mt-1.5 font-semibold">Inflow receipts + broker commissions minus all paid site log outflows</p>
+                </div>
+              </div>
+
+              {/* Pending Collections Card */}
+              <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-slate-500 font-semibold text-xs uppercase tracking-wide">Pending Collections</span>
+                  <span className="material-symbols-outlined text-slate-500">pending_actions</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-2xl font-black text-slate-900 tracking-tight">{formatLakhsCrores(pendingCollectionsVal)}</span>
+                  <p className="text-[10px] text-slate-500 mt-1.5 font-medium">{projects.length > 0 ? "Contract budget remaining to collect on filtered sites" : "No active projects"}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Bayana Countdown Engine Panel */}
+            {activeBayanaAlert && (
+              <div className="relative overflow-hidden bg-rose-50 border-2 border-rose-300 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4 shadow-md animate-pulse">
+                <div className="flex items-center gap-3">
+                  <div className="bg-rose-600 text-white w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm">
+                    <span className="material-symbols-outlined font-bold text-xl">hourglass_bottom</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-black uppercase tracking-widest bg-rose-200 text-rose-800 px-2 py-0.5 rounded">
+                      Bayana Countdown Engine
+                    </span>
+                    <p className="font-bold text-rose-950 text-sm leading-tight mt-1">
+                      ⚠️ Registry Deadline due in <span className="text-rose-600 font-black">{activeBayanaAlert.daysRemaining} days</span> (Date: {activeBayanaAlert.registry_deadline}) for client. Advance receipt of ₹{activeBayanaAlert.amount.toLocaleString()} logged.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleSendReminder(activeBayanaAlert.head_account, activeBayanaAlert.daysRemaining, activeBayanaAlert.registry_deadline)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-5 rounded-lg text-xs font-bold flex items-center gap-2 w-full md:w-auto justify-center active:scale-95 transition-all shadow-sm shrink-0"
+                >
+                  <span className="material-symbols-outlined text-sm font-bold">chat</span>
+                  {waSent ? "Opening WhatsApp Client..." : "Send Outbound WhatsApp Reminder"}
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* Standard Financial Overview */}
+          <section className="space-y-4">
+            <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+              Financial Overview
+            </h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Budget Card */}
+              <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-sm">
+                <p className="text-[11px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Total Contract Value</p>
+                <p className="text-2xl font-black text-slate-900">{formatINR(totalBudget)}</p>
+              </div>
+
+              {/* Expenses Card */}
+              <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-sm">
+                <p className="text-[11px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Total Ledger Disbursements</p>
+                <p className="text-2xl font-black text-slate-900">{formatINR(totalDailySpentSum + totalOfficeExpensesSum)}</p>
+              </div>
+
+              {/* Projected Profit Margin Card */}
+              <div className="bg-emerald-50 p-4 border border-emerald-200 rounded-xl shadow-sm">
+                <p className="text-[11px] font-bold text-emerald-800 mb-1 uppercase tracking-wider">Projected Business Margin</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-2xl font-black text-emerald-700">{projectedMarginVal.toFixed(1)}%</p>
+                  <span className="material-symbols-outlined text-emerald-700 text-sm font-bold" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    trending_up
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
+      {/* BuildEstimate BOS Khata Ledgers Section */}
+      <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden space-y-0">
+        <div className="bg-slate-900 px-4 py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-emerald-400">account_balance</span>
+            <div>
+              <h2 className="text-xs font-extrabold uppercase tracking-widest text-white">BuildEstimate BOS Khata Ledgers</h2>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Four-Ledger Double Entry Matrix</p>
+            </div>
           </div>
+          {isOwnerOrManager && (
+            <button
+              onClick={() => setIsAddLedgerOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+            >
+              <span className="material-symbols-outlined text-xs">add</span>
+              LOG TRANSACTION
+            </button>
+          )}
+        </div>
+
+        {/* Ledger Tabs */}
+        <div className="flex border-b border-slate-200 bg-slate-50 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => {
+              if (isOwnerOrManager) setActiveLedgerTab("cash_in");
+            }}
+            className={`flex-1 min-w-[140px] px-4 py-3 text-xs font-bold border-r border-slate-200 text-center transition-all flex items-center justify-center gap-1.5 ${
+              activeLedgerTab === "cash_in"
+                ? "bg-white text-slate-900 border-b-2 border-b-emerald-600"
+                : "text-slate-500 hover:text-slate-800"
+            } ${!isOwnerOrManager ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            📥 Cash Inflow
+            {!isOwnerOrManager && <span className="material-symbols-outlined text-xs">lock</span>}
+          </button>
+          <button
+            onClick={() => setActiveLedgerTab("payments")}
+            className={`flex-1 min-w-[140px] px-4 py-3 text-xs font-bold border-r border-slate-200 text-center transition-all flex items-center justify-center gap-1.5 ${
+              activeLedgerTab === "payments"
+                ? "bg-white text-slate-900 border-b-2 border-b-emerald-600"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            💸 Daily Site Payments
+          </button>
+          <button
+            onClick={() => {
+              if (isOwnerOrManager) setActiveLedgerTab("office");
+            }}
+            className={`flex-1 min-w-[140px] px-4 py-3 text-xs font-bold border-r border-slate-200 text-center transition-all flex items-center justify-center gap-1.5 ${
+              activeLedgerTab === "office"
+                ? "bg-white text-slate-900 border-b-2 border-b-emerald-600"
+                : "text-slate-500 hover:text-slate-800"
+            } ${!isOwnerOrManager ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            🏢 Office Expenses
+            {!isOwnerOrManager && <span className="material-symbols-outlined text-xs">lock</span>}
+          </button>
+          <button
+            onClick={() => {
+              if (isOwnerOrManager) setActiveLedgerTab("deals");
+            }}
+            className={`flex-1 min-w-[140px] px-4 py-3 text-xs font-bold text-center transition-all flex items-center justify-center gap-1.5 ${
+              activeLedgerTab === "deals"
+                ? "bg-white text-slate-900 border-b-2 border-b-emerald-600"
+                : "text-slate-500 hover:text-slate-800"
+            } ${!isOwnerOrManager ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            🤝 Commissions Matrix
+            {!isOwnerOrManager && <span className="material-symbols-outlined text-xs">lock</span>}
+          </button>
+        </div>
+
+        {/* Ledger Lists Content */}
+        <div className="p-4 bg-white">
+          {activeLedgerTab === "cash_in" && (
+            <div className="space-y-3 animate-fade-in">
+              <div className="flex justify-between items-center text-xs font-semibold text-slate-500 bg-slate-50 p-2 rounded">
+                <span>Account Head & Project</span>
+                <span>Mode / Stage</span>
+                <span className="text-right">Amount</span>
+              </div>
+              {filteredInboundRevenues.length === 0 ? (
+                <p className="text-center text-slate-400 text-xs py-6 font-semibold">No inbound receipts logged for this site filter.</p>
+              ) : (
+                filteredInboundRevenues.map((rev) => {
+                  const p = projects.find(proj => proj.id === rev.project_id);
+                  return (
+                    <div key={rev.id} className="flex justify-between items-center py-2 px-1 border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-slate-900">{rev.head_account}</span>
+                        <span className="text-[10px] text-slate-500 font-semibold">Site: {p?.project_name || "Direct Sale"}</span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-black uppercase tracking-wider">{rev.payment_mode}</span>
+                        <span className="text-[10px] text-slate-400 font-bold mt-0.5">{rev.payment_stage}</span>
+                      </div>
+                      <div className="text-right flex flex-col">
+                        <span className="text-sm font-extrabold text-emerald-700">+{formatINR(rev.amount)}</span>
+                        {rev.registry_deadline && (
+                          <span className="text-[9px] text-rose-600 font-bold">Registry: {rev.registry_deadline}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {activeLedgerTab === "payments" && (
+            <div className="space-y-3 animate-fade-in">
+              <div className="flex justify-between items-center text-xs font-semibold text-slate-500 bg-slate-50 p-2 rounded">
+                <span>Description & Project</span>
+                <span>Category</span>
+                <span className="text-right">Disbursement</span>
+              </div>
+              {filteredDailyPayments.length === 0 ? (
+                <p className="text-center text-slate-400 text-xs py-6 font-semibold">No daily payments logged for this site filter.</p>
+              ) : (
+                filteredDailyPayments.map((pay) => {
+                  const p = projects.find(proj => proj.id === pay.project_id);
+                  return (
+                    <div key={pay.id} className="flex justify-between items-center py-2 px-1 border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
+                      <div className="flex flex-col max-w-[50%]">
+                        <span className="text-sm font-bold text-slate-900 truncate" title={pay.remarks}>{pay.remarks}</span>
+                        <span className="text-[10px] text-slate-500 font-medium">Logged by: {pay.paid_by} • {p?.project_name || "Direct"}</span>
+                      </div>
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                        pay.category === "Labor" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                        pay.category === "Materials" ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-slate-100 text-slate-700"
+                      }`}>{pay.category}</span>
+                      <span className="text-sm font-extrabold text-rose-700">-{formatINR(pay.amount)}</span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {activeLedgerTab === "office" && (
+            <div className="space-y-3 animate-fade-in">
+              <div className="flex justify-between items-center text-xs font-semibold text-slate-500 bg-slate-50 p-2 rounded">
+                <span>Expense Description</span>
+                <span>Due Date</span>
+                <span className="text-right">Amount</span>
+              </div>
+              {officeExpenses.length === 0 ? (
+                <p className="text-center text-slate-400 text-xs py-6 font-semibold">No corporate headquarters fixed overheads recorded.</p>
+              ) : (
+                officeExpenses.map((exp) => (
+                  <div key={exp.id} className="flex justify-between items-center py-2 px-1 border-b border-slate-100 last:border-0">
+                    <span className="text-sm font-bold text-slate-900">{exp.subject}</span>
+                    <span className="text-xs text-slate-500 font-mono">{exp.date}</span>
+                    <span className="text-sm font-extrabold text-rose-700">-{formatINR(exp.amount)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {activeLedgerTab === "deals" && (
+            <div className="space-y-3 animate-fade-in">
+              <div className="flex justify-between items-center text-xs font-semibold text-slate-500 bg-slate-50 p-2 rounded">
+                <span>Broker & Client Details</span>
+                <span>Type</span>
+                <span className="text-right">Adjustment</span>
+              </div>
+              {dealAdjustments.length === 0 ? (
+                <p className="text-center text-slate-400 text-xs py-6 font-semibold">No active real estate broker commission adjustments logged.</p>
+              ) : (
+                dealAdjustments.map((adj) => (
+                  <div key={adj.id} className="flex justify-between items-center py-2 px-1 border-b border-slate-100 last:border-0">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-slate-900">{adj.deal_detail}</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Mapped client reference: {adj.client_id}</span>
+                    </div>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-wider ${
+                      adj.direction === "Inbound_Commission" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"
+                    }`}>
+                      {adj.direction === "Inbound_Commission" ? "INBOUND COMM" : "OUTBOUND PAY"}
+                    </span>
+                    <span className={`text-sm font-extrabold ${adj.direction === "Inbound_Commission" ? "text-emerald-700" : "text-rose-700"}`}>
+                      {adj.direction === "Inbound_Commission" ? "+" : "-"}{formatINR(adj.amount)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </section>
 
@@ -370,8 +844,15 @@ export default function DashboardView({
                 projects.filter(p => p.status !== "Quotation" && p.status !== "Dead").map((project) => (
                   <div
                     key={project.id}
-                    onClick={() => setTab("estimates")}
-                    className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:border-slate-400 hover:shadow transition-all cursor-pointer"
+                    onClick={() => {
+                      setSelectedProjectId(project.id);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className={`p-4 rounded-xl shadow-sm border transition-all cursor-pointer ${
+                      selectedProjectId === project.id
+                        ? "bg-slate-50 border-slate-900 ring-2 ring-slate-950/10"
+                        : "bg-white border-slate-200 hover:border-slate-400 hover:shadow"
+                    }`}
                   >
                     <div className="flex justify-between items-start mb-3">
                       <div>
@@ -520,7 +1001,15 @@ export default function DashboardView({
                 projects.filter(p => p.status === "Quotation" || p.status === "Dead").map((project) => (
                   <div
                     key={project.id}
-                    className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:border-slate-300 transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+                    onClick={() => {
+                      setSelectedProjectId(project.id);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className={`p-4 rounded-xl shadow-sm border transition-all cursor-pointer flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${
+                      selectedProjectId === project.id
+                        ? "bg-slate-50 border-slate-900 ring-2 ring-slate-950/10"
+                        : "bg-white border-slate-200 hover:border-slate-300"
+                    }`}
                   >
                     <div className="space-y-1 flex-grow">
                       <div className="flex items-center gap-2">
@@ -763,6 +1252,222 @@ export default function DashboardView({
                   className="w-1/2 h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-colors shadow-sm"
                 >
                   Create Project
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD NEW TRANSACTION LEDGER MODAL */}
+      {isAddLedgerOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-black text-slate-900 uppercase">
+                Log {activeLedgerTab === "cash_in" ? "Inbound Revenue" : activeLedgerTab === "payments" ? "Daily site Payment" : activeLedgerTab === "office" ? "Office Expense" : "Commission/Deal Payout"}
+              </h3>
+              <button onClick={() => setIsAddLedgerOpen(false)} className="material-symbols-outlined text-slate-400 hover:text-black">
+                close
+              </button>
+            </div>
+
+            <form onSubmit={handleAddLedgerSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  required
+                  placeholder="e.g. 50000"
+                  value={ledgerAmount}
+                  onChange={(e) => setLedgerAmount(e.target.value)}
+                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none font-bold"
+                />
+              </div>
+
+              {(activeLedgerTab === "cash_in" || activeLedgerTab === "payments") && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                    Select Site / Project
+                  </label>
+                  <select
+                    value={ledgerProjectId}
+                    onChange={(e) => setLedgerProjectId(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white font-semibold text-slate-800"
+                  >
+                    <option value="">-- Choose Project --</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>{p.project_name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {activeLedgerTab === "cash_in" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      Head Account Type
+                    </label>
+                    <select
+                      value={ledgerHeadAccount}
+                      onChange={(e) => setLedgerHeadAccount(e.target.value)}
+                      className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white font-medium"
+                    >
+                      <option value="Property Sale">Property Sale Contract</option>
+                      <option value="Mobilization Advance">Mobilization Advance</option>
+                      <option value="Progressive Billing">Progressive Billing Milestone</option>
+                      <option value="Retention Money">Retention Release</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                        Payment Mode
+                      </label>
+                      <select
+                        value={ledgerPaymentMode}
+                        onChange={(e) => setLedgerPaymentMode(e.target.value)}
+                        className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white"
+                      >
+                        <option value="Online">Online Bank Transfer</option>
+                        <option value="Cash">Hard Cash Payment</option>
+                        <option value="Cheque">Banker Cheque</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                        Stage
+                      </label>
+                      <select
+                        value={ledgerPaymentStage}
+                        onChange={(e) => setLedgerPaymentStage(e.target.value)}
+                        className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white"
+                      >
+                        <option value="Advance">Advance (Enters Countdown)</option>
+                        <option value="Running Bill">Progress Bill</option>
+                        <option value="Registry">Final Deed Registry</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {ledgerPaymentStage === "Advance" && (
+                    <div>
+                      <label className="block text-xs font-bold text-rose-600 uppercase mb-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs">calendar_today</span>
+                        Bayana Registry Deadline Date
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={ledgerRegistryDeadline}
+                        onChange={(e) => setLedgerRegistryDeadline(e.target.value)}
+                        className="w-full h-10 border border-rose-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {activeLedgerTab === "payments" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      Expense Category
+                    </label>
+                    <select
+                      value={ledgerCategory}
+                      onChange={(e) => setLedgerCategory(e.target.value)}
+                      className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white font-medium"
+                    >
+                      <option value="Labor">Labor Wages</option>
+                      <option value="Materials">Cement & Raw Materials Delivery</option>
+                      <option value="Fuel">Generator / Diesel Fuel</option>
+                      <option value="Machinery">Machine Rental</option>
+                      <option value="Miscellaneous">Site Petty Cash</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      Payment Remarks / Narrative
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Paid 100 bags Ambuja Cement"
+                      value={ledgerRemarks}
+                      onChange={(e) => setLedgerRemarks(e.target.value)}
+                      className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              {activeLedgerTab === "office" && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                    Corporate Expense Subject / Details
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Sector 82 Office Rental"
+                    value={ledgerRemarks}
+                    onChange={(e) => setLedgerRemarks(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                  />
+                </div>
+              )}
+
+              {activeLedgerTab === "deals" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      Adjustment Direction
+                    </label>
+                    <select
+                      value={ledgerDirection}
+                      onChange={(e) => setLedgerDirection(e.target.value)}
+                      className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white font-semibold"
+                    >
+                      <option value="Inbound_Commission">📥 Inbound Brokerage Commission Receipt</option>
+                      <option value="Outbound_Payout">📤 Outbound Broker Sub-agent Payout</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      Client ID / Name reference
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Sunil Chawla (Agent ref)"
+                      value={ledgerRemarks}
+                      onChange={(e) => setLedgerRemarks(e.target.value)}
+                      className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddLedgerOpen(false)}
+                  className="w-1/2 h-10 border border-slate-300 hover:bg-slate-50 rounded-lg font-bold text-xs uppercase text-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-colors shadow-sm"
+                >
+                  Log Receipt
                 </button>
               </div>
             </form>

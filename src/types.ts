@@ -4,6 +4,7 @@ export interface Profile {
   user_role: 'Owner' | 'Manager' | 'Supervisor' | 'Telecaller';
   account_status: 'Active' | 'Disabled';
   avatar_url?: string;
+  parent_owner_id?: string | null;
 }
 
 export interface Client {
@@ -52,6 +53,7 @@ export interface InboundRevenue {
   payment_mode: 'Cash' | 'Online';
   payment_stage: 'Advance' | 'Partial' | 'Final';
   date: string;
+  registry_deadline?: string;
 }
 
 export interface DailyPayment {
@@ -135,6 +137,16 @@ export interface CriticalAlert {
   project_name?: string;
 }
 
+export interface BuyerRequirement {
+  id: string;
+  buyer_name: string;
+  buyer_phone: string;
+  preferred_location: string;
+  max_budget: number;
+  property_type: 'Plot' | 'Villa' | 'Flat' | 'Commercial';
+  status: 'Pending' | 'Matched' | 'Closed';
+}
+
 export interface DatabaseState {
   profiles: Profile[];
   clients: Client[];
@@ -148,4 +160,5 @@ export interface DatabaseState {
   vendors: Vendor[];
   purchase_orders: PurchaseOrder[];
   alerts: CriticalAlert[];
+  buyer_requirements: BuyerRequirement[];
 }

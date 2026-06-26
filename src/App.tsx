@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { DatabaseState, Profile, DailyPayment, PurchaseOrder, MaterialStock, Project } from "./types";
+import { DatabaseState, Profile, DailyPayment, PurchaseOrder, MaterialStock, Project, InboundRevenue, OfficeExpense, DealAdjustment, Property, BuyerRequirement } from "./types";
 
 // Import modular screens
 import Navigation from "./components/Navigation";
@@ -405,15 +405,48 @@ export default function App() {
               projects={db.projects}
               alerts={db.alerts}
               profiles={db.profiles}
+              inboundRevenues={db.inbound_revenues || []}
+              dailyPayments={db.daily_payments || []}
+              officeExpenses={db.office_expenses || []}
+              dealAdjustments={db.deal_adjustments || []}
               userRole={activeRole}
               setTab={setCurrentTab}
               onOpenOrderDialog={(stockId) => {
                 setCurrentTab("materials");
-                // The materials page triggers the dialog on mount or state
               }}
               onUpdateProfiles={handleUpdateProfiles}
               onAddProject={handleAddProject}
               onUpdateProject={handleUpdateProject}
+              onAddInboundRevenue={(rev) => {
+                const newRev: InboundRevenue = {
+                  ...rev,
+                  id: "rev-" + Date.now(),
+                  date: new Date().toISOString()
+                };
+                const updatedDb = { ...db, inbound_revenues: [newRev, ...(db.inbound_revenues || [])] };
+                syncWithServer(updatedDb);
+                addActivityLog(`Success: Logged Inbound Revenue of ₹${newRev.amount.toLocaleString()} for ${newRev.head_account}.`);
+              }}
+              onAddDailyPayment={handleAddPayment}
+              onAddOfficeExpense={(exp) => {
+                const newExp: OfficeExpense = {
+                  ...exp,
+                  id: "oe-" + Date.now(),
+                  date: new Date().toISOString().split('T')[0]
+                };
+                const updatedDb = { ...db, office_expenses: [newExp, ...(db.office_expenses || [])] };
+                syncWithServer(updatedDb);
+                addActivityLog(`Success: Logged Office Expense of ₹${newExp.amount.toLocaleString()} for "${newExp.subject}".`);
+              }}
+              onAddDealAdjustment={(adj) => {
+                const newAdj: DealAdjustment = {
+                  ...adj,
+                  id: "da-" + Date.now()
+                };
+                const updatedDb = { ...db, deal_adjustments: [newAdj, ...(db.deal_adjustments || [])] };
+                syncWithServer(updatedDb);
+                addActivityLog(`Success: Logged Commission Adjustment of ₹${newAdj.amount.toLocaleString()}.`);
+              }}
             />
           )}
 
@@ -458,7 +491,32 @@ export default function App() {
           {currentTab === "properties" && (
             <PropertyView
               properties={db.properties}
+              buyerRequirements={db.buyer_requirements || []}
               onAddLog={addActivityLog}
+              activeRole={activeRole}
+              onAddProperty={(property) => {
+                const newProperty: Property = {
+                  ...property,
+                  id: "prop-" + Date.now()
+                };
+                const updatedDb = { ...db, properties: [...db.properties, newProperty] };
+                syncWithServer(updatedDb);
+                addActivityLog(`Success: Added real estate property "${newProperty.title}" to active deal catalog.`);
+              }}
+              onAddBuyerRequirement={(req) => {
+                const newReq: BuyerRequirement = {
+                  ...req,
+                  id: "breq-" + Date.now(),
+                  status: "Pending"
+                };
+                const matches = db.properties.filter(p => p.property_type.toLowerCase() === req.property_type.toLowerCase() && p.target_selling_price <= req.max_budget);
+                if (matches.length > 0) {
+                  newReq.status = "Matched";
+                }
+                const updatedDb = { ...db, buyer_requirements: [...(db.buyer_requirements || []), newReq] };
+                syncWithServer(updatedDb);
+                addActivityLog(`Success: Logged buyer requirements for "${newReq.buyer_name}" - running Proactive Match Engine.`);
+              }}
             />
           )}
         </div>

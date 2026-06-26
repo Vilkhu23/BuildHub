@@ -33,11 +33,11 @@ import { DatabaseState, DailyPayment } from "./src/types";
 // Seed Data
 const defaultState: DatabaseState = {
   profiles: [
-    { id: "ak-1", name: "Amit Kumar", user_role: "Manager", account_status: "Active" },
-    { id: "ps-1", name: "Priya Sharma", user_role: "Telecaller", account_status: "Active" },
-    { id: "rk-1", name: "Rahul Khan", user_role: "Supervisor", account_status: "Active" },
-    { id: "vj-1", name: "Vikram Joshi", user_role: "Manager", account_status: "Active" },
-    { id: "owner-1", name: "Rajesh Singh", user_role: "Owner", account_status: "Active" }
+    { id: "ak-1", name: "Amit Kumar", user_role: "Manager", account_status: "Active", parent_owner_id: "owner-1" },
+    { id: "ps-1", name: "Priya Sharma", user_role: "Telecaller", account_status: "Active", parent_owner_id: "owner-1" },
+    { id: "rk-1", name: "Rahul Khan", user_role: "Supervisor", account_status: "Active", parent_owner_id: "owner-1" },
+    { id: "vj-1", name: "Vikram Joshi", user_role: "Manager", account_status: "Active", parent_owner_id: "owner-1" },
+    { id: "owner-1", name: "Rajesh Singh", user_role: "Owner", account_status: "Active", parent_owner_id: null }
   ],
   clients: [
     { id: "cl-1", name: "Rahul Sharma", phone: "9876543210", tags: ["Seller"] },
@@ -82,8 +82,8 @@ const defaultState: DatabaseState = {
       title: "10 Marla Luxury Villa",
       property_type: "Villa",
       location: "Sector 125, Kharar",
-      asking_price: 8550000,
-      target_selling_price: 7800000,
+      asking_price: 7800000,
+      target_selling_price: 8550000,
       source_person_name: "Rahul Sharma (Direct)",
       source_person_type: "Owner",
       image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuBKCjFNjQm8SWpBMT2PqY3MlKIQ9-Srb_sJ3hZIvPB6mI-sdNYP-G8GnkK9m6KqDg8a4xbdu-RYxDp3toSIVgUOihaFhihC8dcJOzAVjala-wvjUE45VvOsJofcB8kXJSmC7d2BgxJBBT6l3hQvvo0N02Vg2PR3_x4efwMWhvYHwes0SG2b-T4CoSfwBrM3NKleq71COVqh3j2dtL054I1gAmjf7Cge9QUCxhsjCSYV3XbIbsSTe4fEpAbqeSqJODR_S8Qa1AqopdaM",
@@ -94,8 +94,8 @@ const defaultState: DatabaseState = {
       title: "Skyline 3BHK Penthouse",
       property_type: "Flat",
       location: "Mohali Phase 7",
-      asking_price: 11200000,
-      target_selling_price: 10500000,
+      asking_price: 10500000,
+      target_selling_price: 11200000,
       source_person_name: "Heritage Brokers",
       source_person_type: "CP",
       image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuBg1FX6WlwaX3P8fTYruqIC2SfGJByeZxELcQtcg6ySMFtc8HfmCONl_nohGJsuOxkchBeyuZ02BO1vbSJ3NBNA_0jvSw1KzCFFQRpmdsqJTOBXsYloDqsM5hqlqdDItMZHpxpUTJIxeD2U8jGF4HslVagAv8Qa8VJI_72WvnDs0OpyasKp38E-EmfBTv4uKT6mbddBcBfeZKQg9JSIaZChA8BSzJFiPI9toG-qKd5fIeUBCHu4JhPUfs4hFLfiLB5PAxug-VHX86S-",
@@ -106,8 +106,8 @@ const defaultState: DatabaseState = {
       title: "Eco-Luxe Studio Apartment",
       property_type: "Flat",
       location: "New Chandigarh",
-      asking_price: 4500000,
-      target_selling_price: 3950000,
+      asking_price: 3950000,
+      target_selling_price: 4500000,
       source_person_name: "Amit Verma (Re-sale)",
       source_person_type: "Owner",
       image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuDfbKozjgD6AU0Ej4oGLFGJjAQRBVnlYSMV626C2DEhZ6CRYAJkF5mRdXnF6XgiJjzttz9hppRkdrA8gn70akhzKCETXPVCiJaUSN1ffUbUXRX97dllvqk6cJrQG21eJ_Fz1goQiisK0fsWQ0eLaYhOC8-VzwUvh8-ZewRIIXAAEYeCo-YAt3qZvqrMgWoBARGhku8vcTr2TQhfRSz3k2TtTQGdyOEzwFSmm-u3XzikQ95VxcbQ5Cw9nXL5tW4-VD1ik0ug5E-LIRNd",
@@ -118,8 +118,8 @@ const defaultState: DatabaseState = {
       title: "Corporate Office Tower Unit",
       property_type: "Commercial",
       location: "IT Park, Chandigarh",
-      asking_price: 24000000,
-      target_selling_price: 21500000,
+      asking_price: 21500000,
+      target_selling_price: 24000000,
       source_person_name: "J.K. Developers",
       source_person_type: "Builder",
       image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuAgrlBoiL2rZBpKzQXOWWkdXPWjHo7ZVWGKRJ6DTkBS_wrrgyyrSEAERpw6iVvmBktjhXhxq9Aely12tZQLDXPp19Q7LG6p02ie3BpGzDwaRTD52DPnVZFSFTP1vTcGwc-BYgN712ZyjXCfvzR9hT0k4VsW9rm-7KKKjYgp-cGoJdsMF9ymBQ00V4DyQgE-hVcseISESOai3mnovy1UBkd113nRXwb8dQ-GMmJnsDWz2AWa5zlVRG8Z6qR3lki2QuNk-eVBfji5gYSf",
@@ -130,11 +130,12 @@ const defaultState: DatabaseState = {
     {
       id: "rev-1",
       project_id: "pr-3",
-      amount: 8542000,
+      amount: 1500000,
       head_account: "Property Sale",
       payment_mode: "Online",
       payment_stage: "Advance",
-      date: "2026-06-24T09:30:00Z"
+      date: "2026-06-25T09:30:00Z",
+      registry_deadline: "2026-06-30"
     }
   ],
   daily_payments: [
@@ -166,8 +167,58 @@ const defaultState: DatabaseState = {
       date: "2026-06-26T16:15:00-07:00"
     }
   ],
-  office_expenses: [],
-  deal_adjustments: [],
+  office_expenses: [
+    {
+      id: "oe-1",
+      subject: "Corporate HQ Rent",
+      amount: 45000,
+      date: "2026-06-01"
+    },
+    {
+      id: "oe-2",
+      subject: "Internet and Cloud Server Billing",
+      amount: 8200,
+      date: "2026-06-15"
+    }
+  ],
+  deal_adjustments: [
+    {
+      id: "da-1",
+      client_id: "cl-1",
+      direction: "Inbound_Commission",
+      amount: 125000,
+      deal_detail: "1.5% commission for Luxury Villa client introduction"
+    }
+  ],
+  buyer_requirements: [
+    {
+      id: "breq-1",
+      buyer_name: "Gurbaksh Singh",
+      buyer_phone: "9876543210",
+      preferred_location: "Sector 125, Kharar",
+      max_budget: 9000000,
+      property_type: "Villa",
+      status: "Matched"
+    },
+    {
+      id: "breq-2",
+      buyer_name: "Kamalpreet Kaur",
+      buyer_phone: "9123456789",
+      preferred_location: "Mohali Phase 7",
+      max_budget: 12000000,
+      property_type: "Flat",
+      status: "Matched"
+    },
+    {
+      id: "breq-3",
+      buyer_name: "Harinder Sidhu",
+      buyer_phone: "9501122334",
+      preferred_location: "Sector 82, Mohali",
+      max_budget: 15000000,
+      property_type: "Commercial",
+      status: "Pending"
+    }
+  ],
   material_stocks: [
     {
       id: "st-1",

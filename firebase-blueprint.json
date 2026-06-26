@@ -1,0 +1,236 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "Profile",
+      "description": "User profile with role-based attributes under a master subscription",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "user_role": { "type": "string", "enum": ["Owner", "Manager", "Supervisor", "Telecaller"] },
+        "account_status": { "type": "string", "enum": ["Active", "Disabled"] },
+        "avatar_url": { "type": "string" },
+        "parent_owner_id": { "type": "string" }
+      },
+      "required": ["id", "name", "user_role", "account_status"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Client details for pre-sale real estate or site contractor mapping",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["Buyer", "Seller", "Vendor", "Contractor"] }
+        }
+      },
+      "required": ["id", "name", "phone", "tags"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Real estate construction project or quotation estimate record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "project_name": { "type": "string" },
+        "status": { "type": "string", "enum": ["Quotation", "Active", "Completed", "Dead"] },
+        "location": { "type": "string" },
+        "type": { "type": "string", "enum": ["Residential", "Commercial", "Villa", "Apartment", "Renovation"] },
+        "completion_pct": { "type": "number" },
+        "total_budget": { "type": "number" },
+        "spent": { "type": "number" },
+        "gst_rate": { "type": "number" }
+      },
+      "required": ["id", "project_name", "status", "location", "type", "completion_pct", "total_budget", "spent"]
+    },
+    "Property": {
+      "title": "Property",
+      "description": "Real estate active deal property matrix",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "property_type": { "type": "string", "enum": ["Plot", "Villa", "Flat", "Commercial"] },
+        "location": { "type": "string" },
+        "asking_price": { "type": "number" },
+        "target_selling_price": { "type": "number" },
+        "source_person_name": { "type": "string" },
+        "source_person_type": { "type": "string", "enum": ["Builder", "Owner", "CP", "Rental Investor"] },
+        "image_url": { "type": "string" },
+        "status": { "type": "string", "enum": ["Available", "Hold", "Sold"] }
+      },
+      "required": ["id", "title", "property_type", "location", "asking_price", "target_selling_price", "source_person_name", "source_person_type", "status"]
+    },
+    "InboundRevenue": {
+      "title": "InboundRevenue",
+      "description": "Inbound cash revenue tracking ledger (be_cash_in)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "project_id": { "type": "string" },
+        "amount": { "type": "number" },
+        "head_account": { "type": "string", "enum": ["Property Sale", "Construction", "Interior", "Renovation", "Rent"] },
+        "payment_mode": { "type": "string", "enum": ["Cash", "Online"] },
+        "payment_stage": { "type": "string", "enum": ["Advance", "Partial", "Final"] },
+        "date": { "type": "string" },
+        "registry_deadline": { "type": "string" }
+      },
+      "required": ["id", "project_id", "amount", "head_account", "payment_mode", "payment_stage", "date"]
+    },
+    "DailyPayment": {
+      "title": "DailyPayment",
+      "description": "Outbound site costs and cash-out ledger (be_daily_payments)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "project_id": { "type": "string" },
+        "amount": { "type": "number" },
+        "paid_by": { "type": "string" },
+        "remarks": { "type": "string" },
+        "category": { "type": "string", "enum": ["Labor", "Materials", "Miscellaneous"] },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "project_id", "amount", "paid_by", "remarks", "category", "date"]
+    },
+    "OfficeExpense": {
+      "title": "OfficeExpense",
+      "description": "General corporate operational fixed overheads (be_office_expenses)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "subject": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "subject", "amount", "date"]
+    },
+    "DealAdjustment": {
+      "title": "DealAdjustment",
+      "description": "Client broker commissions inbound/outbound adjustments ledger (be_deal_adjustments)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "direction": { "type": "string", "enum": ["Inbound_Commission", "Outbound_Payout"] },
+        "amount": { "type": "number" },
+        "deal_detail": { "type": "string" }
+      },
+      "required": ["id", "client_id", "direction", "amount", "deal_detail"]
+    },
+    "MaterialStock": {
+      "title": "MaterialStock",
+      "description": "Raw material inventory on-site stock levels",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "location": { "type": "string" },
+        "current_stock": { "type": "number" },
+        "unit": { "type": "string" },
+        "critical_level": { "type": "number" },
+        "status": { "type": "string", "enum": ["In Stock", "Low Stock", "Out of Stock"] },
+        "icon": { "type": "string" }
+      },
+      "required": ["id", "name", "category", "location", "current_stock", "unit", "critical_level", "status"]
+    },
+    "Vendor": {
+      "title": "Vendor",
+      "description": "Approved supplier directory record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "rating": { "type": "number" },
+        "status": { "type": "string", "enum": ["PREFERRED", "ACTIVE", "ON HOLD"] },
+        "active_orders_count": { "type": "number" },
+        "last_delivery_date": { "type": "string" },
+        "total_spent": { "type": "number" },
+        "paid_amount": { "type": "number" },
+        "balance_due": { "type": "number" },
+        "on_time_delivery_pct": { "type": "number" },
+        "quality_rating": { "type": "number" }
+      },
+      "required": ["id", "name", "category", "rating", "status", "active_orders_count", "total_spent", "paid_amount", "balance_due"]
+    },
+    "PurchaseOrder": {
+      "title": "PurchaseOrder",
+      "description": "Supplier supply order and delivery tracking logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "vendor_id": { "type": "string" },
+        "vendor_name": { "type": "string" },
+        "project_name": { "type": "string" },
+        "order_date": { "type": "string" },
+        "expected_delivery": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["In Transit", "Completed", "Cancelled"] },
+        "item_name": { "type": "string" },
+        "item_sku": { "type": "string" },
+        "quantity_description": { "type": "string" },
+        "unit_price": { "type": "number" }
+      },
+      "required": ["id", "vendor_id", "vendor_name", "project_name", "order_date", "expected_delivery", "amount", "status", "item_name", "item_sku", "quantity_description", "unit_price"]
+    },
+    "CriticalAlert": {
+      "title": "CriticalAlert",
+      "description": "On-site resource anomaly alert notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["Stock", "Deadline", "General"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "project_name": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "description"]
+    },
+    "BuyerRequirement": {
+      "title": "BuyerRequirement",
+      "description": "Active buyer requirement profiles for auto-matching (be_buyer_requirements)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "buyer_name": { "type": "string" },
+        "buyer_phone": { "type": "string" },
+        "preferred_location": { "type": "string" },
+        "max_budget": { "type": "number" },
+        "property_type": { "type": "string", "enum": ["Plot", "Villa", "Flat", "Commercial"] },
+        "status": { "type": "string", "enum": ["Pending", "Matched", "Closed"] }
+      },
+      "required": ["id", "buyer_name", "buyer_phone", "preferred_location", "max_budget", "property_type", "status"]
+    },
+    "DatabaseState": {
+      "title": "DatabaseState",
+      "description": "Pristine application-state master record stored in Firestore per-user",
+      "type": "object",
+      "properties": {
+        "profiles": { "type": "array", "items": { "$ref": "Profile" } },
+        "clients": { "type": "array", "items": { "$ref": "Client" } },
+        "projects": { "type": "array", "items": { "$ref": "Project" } },
+        "properties": { "type": "array", "items": { "$ref": "Property" } },
+        "inbound_revenues": { "type": "array", "items": { "$ref": "InboundRevenue" } },
+        "daily_payments": { "type": "array", "items": { "$ref": "DailyPayment" } },
+        "office_expenses": { "type": "array", "items": { "$ref": "OfficeExpense" } },
+        "deal_adjustments": { "type": "array", "items": { "$ref": "DealAdjustment" } },
+        "material_stocks": { "type": "array", "items": { "$ref": "MaterialStock" } },
+        "vendors": { "type": "array", "items": { "$ref": "Vendor" } },
+        "purchase_orders": { "type": "array", "items": { "$ref": "PurchaseOrder" } },
+        "alerts": { "type": "array", "items": { "$ref": "CriticalAlert" } },
+        "buyer_requirements": { "type": "array", "items": { "$ref": "BuyerRequirement" } }
+      },
+      "required": ["profiles", "clients", "projects", "properties", "inbound_revenues", "daily_payments", "office_expenses", "deal_adjustments", "material_stocks", "vendors", "purchase_orders", "alerts", "buyer_requirements"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "DatabaseState",
+      "description": "Per-user secure database storage containing profiles, active construction trackers, deal catalogs, and micro-ledgers"
+    }
+  }
+}
