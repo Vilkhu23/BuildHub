@@ -10,6 +10,10 @@ interface NavigationProps {
   user: any;
   onSignIn: () => void;
   onSignOut: () => void;
+  filterNavigationLinks?: (
+    role: 'Owner' | 'Manager' | 'Supervisor' | 'Telecaller',
+    items: Array<{ id: string; label: string; icon: string; roles: string[] }>
+  ) => Array<{ id: string; label: string; icon: string; roles: string[] }>;
 }
 
 export default function Navigation({
@@ -21,6 +25,7 @@ export default function Navigation({
   user,
   onSignIn,
   onSignOut,
+  filterNavigationLinks,
 }: NavigationProps) {
   // Get active role user avatar/profile
   const currentUser = profiles.find((p) => p.user_role === activeRole) || {
@@ -50,10 +55,13 @@ export default function Navigation({
     { id: "orders", label: "Orders", icon: "receipt_long", roles: ["Owner", "Manager", "Supervisor"] },
     { id: "sitelog", label: "Site Log", icon: "mic", roles: ["Owner", "Supervisor", "Manager"] },
     { id: "properties", label: "Properties", icon: "domain", roles: ["Owner", "Telecaller", "Manager"] },
+    { id: "settings", label: "Settings", icon: "settings", roles: ["Owner", "Manager"] },
   ];
 
-  // Filter menu items by active role access (RBAC)
-  const visibleItems = menuItems.filter((item) => item.roles.includes(activeRole));
+  // Filter menu items by active role access (RBAC) using helper if provided
+  const visibleItems = filterNavigationLinks
+    ? filterNavigationLinks(activeRole, menuItems)
+    : menuItems.filter((item) => item.roles.includes(activeRole));
 
   return (
     <>
@@ -94,7 +102,7 @@ export default function Navigation({
                   // Dynamic redirect based on RBAC restrictions
                   if (role === "Telecaller") {
                     setCurrentTab("properties");
-                  } else if (role === "Supervisor" && (currentTab === "estimates" || currentTab === "materials" || currentTab === "properties")) {
+                  } else if (role === "Supervisor" && (currentTab === "estimates" || currentTab === "materials" || currentTab === "properties" || currentTab === "settings")) {
                     setCurrentTab("sitelog");
                   } else if (currentTab === "properties" && role === "Supervisor") {
                     setCurrentTab("sitelog");
@@ -157,7 +165,7 @@ export default function Navigation({
       <div className="hidden md:block w-full bg-white border-b border-slate-200 sticky top-14 z-40">
         <div className="mx-auto max-w-7xl px-4 overflow-x-auto no-scrollbar">
           <nav className="flex space-x-6 h-12 items-center">
-            {menuItems.map((item) => {
+            {visibleItems.map((item) => {
               const isAccessible = item.roles.includes(activeRole);
               const isActive = currentTab === item.id;
 
@@ -194,7 +202,7 @@ export default function Navigation({
 
       {/* Premium Sticky Bottom Tab Bar for Mobile Devices */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200/90 z-50 px-2 pb-safe pt-2 flex justify-around items-center shadow-[0_-4px_16px_rgba(15,23,42,0.06)] backdrop-blur-lg">
-        {menuItems.map((item) => {
+        {visibleItems.map((item) => {
           const isAccessible = item.roles.includes(activeRole);
           const isActive = currentTab === item.id;
 

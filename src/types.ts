@@ -1,3 +1,20 @@
+export interface LineItem {
+  name: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  amount: number;
+}
+
+export interface CompanySettings {
+  companyName: string;
+  gstin: string;
+  phone: string;
+  email: string;
+  address: string;
+  logoUrl: string;
+}
+
 export interface Profile {
   id: string;
   name: string;
@@ -25,9 +42,9 @@ export interface Project {
   total_budget: number;
   spent: number;
   estimates?: {
-    civil: { name: string; amount: number }[];
-    electrical: { name: string; amount: number }[];
-    finishes: { name: string; amount: number }[];
+    civil: LineItem[];
+    electrical: LineItem[];
+    finishes: LineItem[];
   };
   gst_rate?: number;
 }

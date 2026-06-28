@@ -1,18 +1,14 @@
 import React, { useState } from "react";
-import { Project } from "../types";
+import { Project, LineItem, Client } from "../types";
 
 interface EstimatesViewProps {
   projects: Project[];
+  clients?: Client[];
   onAddLog: (log: string) => void;
   onUpdateProject?: (project: Project) => void;
 }
 
-interface LineItem {
-  name: string;
-  amount: number;
-}
-
-export default function EstimatesView({ projects, onAddLog, onUpdateProject }: EstimatesViewProps) {
+export default function EstimatesView({ projects, clients = [], onAddLog, onUpdateProject }: EstimatesViewProps) {
   const [confirmAction, setConfirmAction] = useState<{
     message: string;
     onConfirm: () => void;
@@ -34,62 +30,10 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
   const activeProjId = selectedProjectId || (projects.length > 0 ? projects[0].id : "");
   const selectedProject = projects.find(p => p.id === activeProjId) || projects[0];
 
-  // Helper to dynamically get estimates with seed fallbacks
+  // Helper to dynamically get estimates
   const getProjectEstimates = (proj: Project | undefined) => {
     if (!proj) return { civil: [], electrical: [], finishes: [] };
     if (proj.estimates) return proj.estimates;
-    
-    // Fallback default estimates for pr-3 if not set
-    if (proj.id === "pr-3") {
-      return {
-        civil: [
-          { name: "Reinforcement Steel", amount: 1240000 },
-          { name: "RMC (M25 Grade)", amount: 1815000 },
-        ],
-        electrical: [
-          { name: "Internal Wiring Copper", amount: 450000 },
-          { name: "Distribution Board Panels", amount: 575000 },
-        ],
-        finishes: [
-          { name: "Italian Marble Premium", amount: 1350000 },
-          { name: "Premium Emulsion Paints", amount: 1041700 },
-        ]
-      };
-    }
-    // General fallback defaults for other projects
-    if (proj.id === "pr-1") {
-      return {
-        civil: [
-          { name: "Foundations & Plinth", amount: 1850000 },
-          { name: "Structure Masonry", amount: 2200000 }
-        ],
-        electrical: [
-          { name: "Conduit Pipes Fitting", amount: 250000 },
-          { name: "Modular Switches", amount: 150000 }
-        ],
-        finishes: [
-          { name: "External Plaster Paint", amount: 650000 },
-          { name: "Vitrified Flooring", amount: 1100000 }
-        ]
-      };
-    }
-    if (proj.id === "pr-2") {
-      return {
-        civil: [
-          { name: "Basement Excavation", amount: 4500000 },
-          { name: "Superstructure Columns", amount: 8200000 }
-        ],
-        electrical: [
-          { name: "HT Substation Transformer", amount: 3500000 },
-          { name: "Wiring & Conduit Work", amount: 1500000 }
-        ],
-        finishes: [
-          { name: "Glass Curtain Wall Finishes", amount: 4200000 },
-          { name: "Granite Lobby Tiling", amount: 1800000 }
-        ]
-      };
-    }
-
     return { civil: [], electrical: [], finishes: [] };
   };
 
@@ -109,15 +53,34 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
   const [targetCategory, setTargetCategory] = useState<"civil" | "electrical" | "finishes" | null>(null);
   const [newItemName, setNewItemName] = useState("");
   const [newItemAmount, setNewItemAmount] = useState("");
+  const [newItemQuantity, setNewItemQuantity] = useState<string>("1");
+  const [newItemUnit, setNewItemUnit] = useState<string>("sqft");
+  const [newItemRate, setNewItemRate] = useState<string>("0");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingCategory, setEditingCategory] = useState<"civil" | "electrical" | "finishes" | null>(null);
+
+  // State for Assign Client Modal
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [selectedClientIdForAssignment, setSelectedClientIdForAssignment] = useState<string>("");
+
+  const linkedClient = selectedProject?.client_id
+    ? clients.find(c => c.id === selectedProject.client_id)
+    : undefined;
+
+  const handleOpenAssignModal = () => {
+    setSelectedClientIdForAssignment(selectedProject?.client_id || "");
+    setIsAssignModalOpen(true);
+  };
 
   const handleOpenAddModal = (cat: "civil" | "electrical" | "finishes") => {
     setTargetCategory(cat);
     setEditingIndex(null);
     setEditingCategory(null);
     setNewItemName("");
-    setNewItemAmount("");
+    setNewItemQuantity("1");
+    setNewItemUnit("sqft");
+    setNewItemRate("0");
+    setNewItemAmount("0");
     setIsModalOpen(true);
   };
 
@@ -126,6 +89,9 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
     setEditingIndex(index);
     setEditingCategory(cat);
     setNewItemName(item.name);
+    setNewItemQuantity((item.quantity ?? 1).toString());
+    setNewItemUnit(item.unit ?? "sqft");
+    setNewItemRate((item.rate ?? item.amount).toString());
     setNewItemAmount(item.amount.toString());
     setIsModalOpen(true);
   };
@@ -168,33 +134,43 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
   const handleAddLineItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProject || !onUpdateProject) return;
-    const amountNum = parseFloat(newItemAmount) || 0;
-    if (!newItemName || amountNum <= 0) return;
+    const qty = parseFloat(newItemQuantity) || 0;
+    const rate = parseFloat(newItemRate) || 0;
+    const amountNum = qty * rate;
+    if (!newItemName || qty <= 0 || rate < 0) return;
 
     let nextCivil = [...civilItems];
     let nextElec = [...electricalItems];
     let nextFin = [...finishesItems];
 
+    const newItem: LineItem = {
+      name: newItemName,
+      quantity: qty,
+      unit: newItemUnit,
+      rate: rate,
+      amount: amountNum
+    };
+
     if (editingIndex !== null && editingCategory !== null) {
       // Editing Mode
       if (editingCategory === "civil") {
-        nextCivil = nextCivil.map((item, idx) => idx === editingIndex ? { name: newItemName, amount: amountNum } : item);
+        nextCivil = nextCivil.map((item, idx) => idx === editingIndex ? newItem : item);
       } else if (editingCategory === "electrical") {
-        nextElec = nextElec.map((item, idx) => idx === editingIndex ? { name: newItemName, amount: amountNum } : item);
+        nextElec = nextElec.map((item, idx) => idx === editingIndex ? newItem : item);
       } else if (editingCategory === "finishes") {
-        nextFin = nextFin.map((item, idx) => idx === editingIndex ? { name: newItemName, amount: amountNum } : item);
+        nextFin = nextFin.map((item, idx) => idx === editingIndex ? newItem : item);
       }
-      onAddLog(`Updated estimate line item to "${newItemName}" under ${editingCategory} for ₹${amountNum.toLocaleString()}`);
+      onAddLog(`Updated estimate line item to "${newItemName}" (${qty} ${newItemUnit} @ ₹${rate}/unit) under ${editingCategory} for ₹${amountNum.toLocaleString()}`);
     } else if (targetCategory) {
       // Adding Mode
       if (targetCategory === "civil") {
-        nextCivil.push({ name: newItemName, amount: amountNum });
+        nextCivil.push(newItem);
       } else if (targetCategory === "electrical") {
-        nextElec.push({ name: newItemName, amount: amountNum });
+        nextElec.push(newItem);
       } else if (targetCategory === "finishes") {
-        nextFin.push({ name: newItemName, amount: amountNum });
+        nextFin.push(newItem);
       }
-      onAddLog(`Added estimate line item "${newItemName}" under ${targetCategory} for ₹${amountNum.toLocaleString()}`);
+      onAddLog(`Added estimate line item "${newItemName}" (${qty} ${newItemUnit} @ ₹${rate}/unit) under ${targetCategory} for ₹${amountNum.toLocaleString()}`);
     }
 
     const nextGrandTotal = nextCivil.reduce((sum, item) => sum + item.amount, 0) +
@@ -214,6 +190,9 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
     // Reset and close
     setNewItemName("");
     setNewItemAmount("");
+    setNewItemQuantity("1");
+    setNewItemUnit("sqft");
+    setNewItemRate("0");
     setIsModalOpen(false);
     setTargetCategory(null);
     setEditingIndex(null);
@@ -243,6 +222,7 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
 
   const handleDownloadQuote = () => {
     const projName = selectedProject?.project_name || "Active Project Site";
+    const clientName = linkedClient ? linkedClient.name : "Client Not Assigned";
     const docHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -458,7 +438,7 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
     <div class="details-grid">
       <div class="details-card">
         <h3>Prepared For</h3>
-        <p class="highlight">Valued Client</p>
+        <p class="highlight">${clientName}</p>
         <p>Ref: ${projName}</p>
       </div>
       <div class="details-card">
@@ -473,19 +453,25 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
       <thead>
         <tr>
           <th>Description</th>
-          <th class="text-right" style="width: 150px;">Amount</th>
+          <th class="text-right" style="width: 100px;">Qty</th>
+          <th class="text-right" style="width: 100px;">Unit</th>
+          <th class="text-right" style="width: 120px;">Rate (₹)</th>
+          <th class="text-right" style="width: 140px;">Amount (₹)</th>
         </tr>
       </thead>
       <tbody>
         ${civilItems.map(item => `
           <tr>
             <td>${item.name}</td>
+            <td class="text-right">${(item.quantity ?? 1).toLocaleString()}</td>
+            <td class="text-right">${item.unit ?? 'sqft'}</td>
+            <td class="text-right">₹${(item.rate ?? item.amount).toLocaleString()}</td>
             <td class="text-right">₹${item.amount.toLocaleString()}</td>
           </tr>
         `).join('')}
-        ${civilItems.length === 0 ? '<tr><td colspan="2" style="color: #94a3b8; text-align: center;">No civil items added.</td></tr>' : ''}
+        ${civilItems.length === 0 ? '<tr><td colspan="5" style="color: #94a3b8; text-align: center;">No civil items added.</td></tr>' : ''}
         <tr style="background-color: #f8fafc; font-weight: 700;">
-          <td>Civil Category Subtotal</td>
+          <td colspan="4">Civil Category Subtotal</td>
           <td class="text-right">₹${totalCivil.toLocaleString()}</td>
         </tr>
       </tbody>
@@ -496,19 +482,25 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
       <thead>
         <tr>
           <th>Description</th>
-          <th class="text-right" style="width: 150px;">Amount</th>
+          <th class="text-right" style="width: 100px;">Qty</th>
+          <th class="text-right" style="width: 100px;">Unit</th>
+          <th class="text-right" style="width: 120px;">Rate (₹)</th>
+          <th class="text-right" style="width: 140px;">Amount (₹)</th>
         </tr>
       </thead>
       <tbody>
         ${electricalItems.map(item => `
           <tr>
             <td>${item.name}</td>
+            <td class="text-right">${(item.quantity ?? 1).toLocaleString()}</td>
+            <td class="text-right">${item.unit ?? 'sqft'}</td>
+            <td class="text-right">₹${(item.rate ?? item.amount).toLocaleString()}</td>
             <td class="text-right">₹${item.amount.toLocaleString()}</td>
           </tr>
         `).join('')}
-        ${electricalItems.length === 0 ? '<tr><td colspan="2" style="color: #94a3b8; text-align: center;">No electrical items added.</td></tr>' : ''}
+        ${electricalItems.length === 0 ? '<tr><td colspan="5" style="color: #94a3b8; text-align: center;">No electrical items added.</td></tr>' : ''}
         <tr style="background-color: #f8fafc; font-weight: 700;">
-          <td>Electrical Category Subtotal</td>
+          <td colspan="4">Electrical Category Subtotal</td>
           <td class="text-right">₹${totalElectrical.toLocaleString()}</td>
         </tr>
       </tbody>
@@ -519,19 +511,25 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
       <thead>
         <tr>
           <th>Description</th>
-          <th class="text-right" style="width: 150px;">Amount</th>
+          <th class="text-right" style="width: 100px;">Qty</th>
+          <th class="text-right" style="width: 100px;">Unit</th>
+          <th class="text-right" style="width: 120px;">Rate (₹)</th>
+          <th class="text-right" style="width: 140px;">Amount (₹)</th>
         </tr>
       </thead>
       <tbody>
         ${finishesItems.map(item => `
           <tr>
             <td>${item.name}</td>
+            <td class="text-right">${(item.quantity ?? 1).toLocaleString()}</td>
+            <td class="text-right">${item.unit ?? 'sqft'}</td>
+            <td class="text-right">₹${(item.rate ?? item.amount).toLocaleString()}</td>
             <td class="text-right">₹${item.amount.toLocaleString()}</td>
           </tr>
         `).join('')}
-        ${finishesItems.length === 0 ? '<tr><td colspan="2" style="color: #94a3b8; text-align: center;">No finishes items added.</td></tr>' : ''}
+        ${finishesItems.length === 0 ? '<tr><td colspan="5" style="color: #94a3b8; text-align: center;">No finishes items added.</td></tr>' : ''}
         <tr style="background-color: #f8fafc; font-weight: 700;">
-          <td>Finishes Category Subtotal</td>
+          <td colspan="4">Finishes Category Subtotal</td>
           <td class="text-right">₹${totalFinishes.toLocaleString()}</td>
         </tr>
       </tbody>
@@ -604,24 +602,63 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-24">
-      {/* Project Context Title with interactive selector dropdown */}
-      <div className="flex flex-col space-y-1">
-        <div className="flex items-center gap-1.5 text-slate-500 font-bold text-xs">
-          <span className="material-symbols-outlined text-sm">apartment</span>
-          CHOOSE PROJECT OR ESTIMATE QUOTATION
+      {/* Project Context Title with interactive selector dropdown and Linked Client */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+        <div className="flex flex-col space-y-1">
+          <div className="flex items-center gap-1.5 text-slate-500 font-bold text-xs">
+            <span className="material-symbols-outlined text-sm">apartment</span>
+            CHOOSE PROJECT OR ESTIMATE QUOTATION
+          </div>
+          <div className="flex items-center gap-1">
+            <select
+              value={activeProjId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="text-lg font-black text-slate-900 bg-transparent border-none ring-none focus:ring-none focus:outline-none p-0 cursor-pointer outline-none"
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.project_name} ({p.status === "Quotation" ? "Draft Quote" : p.status === "Dead" ? "Dead Quote" : p.status})
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <select
-            value={activeProjId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="text-lg font-black text-slate-900 bg-transparent border-none ring-none focus:ring-none focus:outline-none p-0 cursor-pointer outline-none"
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.project_name} ({p.status === "Quotation" ? "Draft Quote" : p.status === "Dead" ? "Dead Quote" : p.status})
-              </option>
-            ))}
-          </select>
+
+        {/* Linked Client Info Card */}
+        <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+          <span className="material-symbols-outlined text-slate-400 text-xl">person</span>
+          <div className="text-xs">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-0.5">Linked Client</span>
+            {linkedClient ? (
+              <div className="flex items-center gap-3">
+                <div>
+                  <p className="font-extrabold text-slate-800">{linkedClient.name}</p>
+                  {linkedClient.phone && (
+                    <p className="text-[10px] text-slate-500">{linkedClient.phone}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenAssignModal}
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-full transition-colors flex items-center justify-center"
+                  title="Change Linked Client"
+                >
+                  <span className="material-symbols-outlined text-sm">edit</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-rose-600 italic">Client Not Assigned</span>
+                <button
+                  type="button"
+                  onClick={handleOpenAssignModal}
+                  className="px-2 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded text-[10px] font-black transition-all uppercase"
+                >
+                  Assign Client
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -915,12 +952,6 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
         <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
           CATEGORY BREAKDOWN
         </h3>
-        <button
-          onClick={() => alert("Estimated log changes:\n1. Initial breakdown created Oct 24.\n2. Verified Gupta Marbles finishes quota.\n3. Base tax rules applied.")}
-          className="text-emerald-700 font-bold text-xs flex items-center gap-1 hover:underline"
-        >
-          <span className="material-symbols-outlined text-sm">history</span> View Changes
-        </button>
       </div>
 
       {/* Category Bento List Cluster */}
@@ -971,6 +1002,11 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                     <div key={idx} className="flex items-center justify-between text-xs group py-1 border-b border-slate-100 last:border-0">
                       <div className="flex-1">
                         <span className="text-slate-600 font-medium">{item.name}</span>
+                        {item.quantity !== undefined && item.rate !== undefined && (
+                          <p className="text-[10px] text-slate-400 font-medium">
+                            {item.quantity.toLocaleString()} {item.unit || "sqft"} @ ₹{item.rate.toLocaleString()}/{item.unit || "sqft"}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="font-bold text-slate-900">₹{item.amount.toLocaleString()}</span>
@@ -1059,6 +1095,11 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                     <div key={idx} className="flex items-center justify-between text-xs group py-1 border-b border-slate-100 last:border-0">
                       <div className="flex-1">
                         <span className="text-slate-600 font-medium">{item.name}</span>
+                        {item.quantity !== undefined && item.rate !== undefined && (
+                          <p className="text-[10px] text-slate-400 font-medium">
+                            {item.quantity.toLocaleString()} {item.unit || "sqft"} @ ₹{item.rate.toLocaleString()}/{item.unit || "sqft"}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="font-bold text-slate-900">₹{item.amount.toLocaleString()}</span>
@@ -1153,6 +1194,11 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
                     <div key={idx} className="flex items-center justify-between text-xs group py-1 border-b border-slate-100 last:border-0">
                       <div className="flex-1">
                         <span className="text-slate-600 font-medium">{item.name}</span>
+                        {item.quantity !== undefined && item.rate !== undefined && (
+                          <p className="text-[10px] text-slate-400 font-medium">
+                            {item.quantity.toLocaleString()} {item.unit || "sqft"} @ ₹{item.rate.toLocaleString()}/{item.unit || "sqft"}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="font-bold text-slate-900">₹{item.amount.toLocaleString()}</span>
@@ -1272,8 +1318,25 @@ export default function EstimatesView({ projects, onAddLog, onUpdateProject }: E
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div>
                   <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Prepared For</span>
-                  <p className="font-extrabold text-slate-900">Valued Client</p>
-                  <p className="text-slate-500">Ref: {selectedProject?.project_name || 'Active Project Site'}</p>
+                  {linkedClient ? (
+                    <div>
+                      <p className="font-extrabold text-slate-900">{linkedClient.name}</p>
+                      {linkedClient.phone && <p className="text-[10px] text-slate-500">Phone: {linkedClient.phone}</p>}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="font-extrabold text-rose-600">Client Not Assigned</p>
+                      <button
+                        type="button"
+                        onClick={handleOpenAssignModal}
+                        className="text-[10px] font-black uppercase text-emerald-750 hover:text-emerald-900 underline flex items-center gap-0.5"
+                      >
+                        <span className="material-symbols-outlined text-[12px] font-bold">person_add</span>
+                        Assign Client
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-slate-500 mt-1">Ref: {selectedProject?.project_name || 'Active Project Site'}</p>
                 </div>
                 <div>
                   <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Site Address</span>
@@ -1344,6 +1407,7 @@ BuildEstimate Inc.
 Quote #: EST-${selectedProject?.id || '001'}
 Date: ${new Date().toLocaleDateString('en-IN')}
 
+Client: ${linkedClient ? linkedClient.name : 'Client Not Assigned'}
 Project Site: ${selectedProject?.project_name || 'Active Project Site'}
 Address: ${selectedProject?.location || 'N/A'}
 Project Type: ${selectedProject?.type || 'Construction'}
@@ -1438,18 +1502,77 @@ BuildEstimate Inc.
                 />
               </div>
 
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">
+                    Quantity
+                  </label>
+                  <input
+                    id="line-item-qty"
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 1"
+                    value={newItemQuantity}
+                    onChange={(e) => setNewItemQuantity(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">
+                    Unit
+                  </label>
+                  <select
+                    id="line-item-unit"
+                    value={newItemUnit}
+                    onChange={(e) => setNewItemUnit(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-2 text-sm focus:border-slate-900 outline-none bg-white cursor-pointer"
+                  >
+                    <option value="sqft">sqft</option>
+                    <option value="rft">rft</option>
+                    <option value="nos">nos</option>
+                    <option value="kg">kg</option>
+                    <option value="bag">bag</option>
+                    <option value="cum">cum</option>
+                    <option value="ls">ls</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">
+                    Rate (₹)
+                  </label>
+                  <input
+                    id="line-item-rate"
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 150"
+                    value={newItemRate}
+                    onChange={(e) => setNewItemRate(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                  Rupee Cost (₹)
+                  Total Amount (₹) - Auto Calculated
                 </label>
-                <input
-                  type="number"
-                  required
-                  placeholder="e.g. 250000"
-                  value={newItemAmount}
-                  onChange={(e) => setNewItemAmount(e.target.value)}
-                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
-                />
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 text-sm">₹</span>
+                  <input
+                    id="line-item-amount"
+                    type="text"
+                    readOnly
+                    disabled
+                    value={((parseFloat(newItemQuantity) || 0) * (parseFloat(newItemRate) || 0)).toLocaleString("en-IN")}
+                    className="w-full h-10 bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-3 text-sm font-bold text-slate-700 outline-none cursor-not-allowed"
+                  />
+                </div>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -1501,6 +1624,83 @@ BuildEstimate Inc.
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-md transition-all"
               >
                 Yes, Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Client Modal */}
+      {isAssignModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl relative">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-slate-900 font-bold">
+                <span className="material-symbols-outlined text-emerald-600">person_add</span>
+                <h3 className="text-base font-black uppercase tracking-wide">Assign Client to Project</h3>
+              </div>
+              <button 
+                onClick={() => setIsAssignModalOpen(false)}
+                className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Choose an existing client from your contact book to link with the project <strong className="text-slate-800">"{selectedProject?.project_name}"</strong>. This will automatically populate their info on official quotations, invoices, and material summaries.
+              </p>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5 tracking-wider">
+                  Select Associated Client
+                </label>
+                <select
+                  value={selectedClientIdForAssignment}
+                  onChange={(e) => setSelectedClientIdForAssignment(e.target.value)}
+                  className="w-full h-11 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white cursor-pointer"
+                >
+                  <option value="">-- Choose a Client --</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.phone || "No Phone"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {clients.length === 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] font-medium leading-relaxed">
+                  ⚠️ No client accounts found in your system. To assign a client, please add them in other views first.
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsAssignModalOpen(false)}
+                className="flex-1 h-10 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-black uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedProject && onUpdateProject) {
+                    onUpdateProject({
+                      ...selectedProject,
+                      client_id: selectedClientIdForAssignment || undefined
+                    });
+                    const clientName = clients.find(c => c.id === selectedClientIdForAssignment)?.name || "N/A";
+                    onAddLog(`Assigned client "${clientName}" to project "${selectedProject.project_name}".`);
+                    setIsAssignModalOpen(false);
+                  }
+                }}
+                className="flex-1 h-10 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all"
+              >
+                Save Association
               </button>
             </div>
           </div>

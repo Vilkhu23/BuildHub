@@ -1,5 +1,16 @@
 import React, { useState } from "react";
-import { Project, CriticalAlert, Profile, InboundRevenue, DailyPayment, OfficeExpense, DealAdjustment } from "../types";
+import { Project, CriticalAlert, Profile, InboundRevenue, DailyPayment, OfficeExpense, DealAdjustment, Vendor } from "../types";
+import DashboardSummaryCard from "./DashboardSummaryCard";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
+} from "recharts";
 
 interface DashboardViewProps {
   projects: Project[];
@@ -9,6 +20,7 @@ interface DashboardViewProps {
   dailyPayments: DailyPayment[];
   officeExpenses: OfficeExpense[];
   dealAdjustments: DealAdjustment[];
+  vendors: Vendor[];
   userRole: 'Owner' | 'Manager' | 'Supervisor' | 'Telecaller';
   setTab: (tab: string) => void;
   onOpenOrderDialog: (stockId: string) => void;
@@ -29,6 +41,7 @@ export default function DashboardView({
   dailyPayments,
   officeExpenses,
   dealAdjustments,
+  vendors,
   userRole,
   setTab,
   onOpenOrderDialog,
@@ -237,6 +250,99 @@ export default function DashboardView({
 
   const activeBayanaAlert = bayanaDeadlines[0];
 
+  // Generate last 30 days of cash flow data
+  const chartData = React.useMemo(() => {
+    const data: Array<{ dateLabel: string; Inflow: number; Outflow: number }> = [];
+    const today = new Date("2026-06-28"); // Current local time as anchor
+    
+    // Create map of last 30 days
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const dateStr = `${year}-${month}-${day}`; // "YYYY-MM-DD"
+      
+      const dayLabel = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }); // e.g. "28 Jun"
+      
+      // Calculate inbound revenues on this day
+      const inflowSum = inboundRevenues
+        .filter(r => {
+          if (!r.date) return false;
+          try {
+            const parsed = new Date(r.date);
+            if (isNaN(parsed.getTime())) return false;
+            const pyear = parsed.getFullYear();
+            const pmonth = String(parsed.getMonth() + 1).padStart(2, "0");
+            const pday = String(parsed.getDate()).padStart(2, "0");
+            return `${pyear}-${pmonth}-${pday}` === dateStr;
+          } catch {
+            return false;
+          }
+        })
+        .reduce((sum, r) => sum + r.amount, 0);
+        
+      // Calculate daily payments on this day
+      const outflowSum = dailyPayments
+        .filter(p => {
+          if (!p.date) return false;
+          try {
+            const parsed = new Date(p.date);
+            if (isNaN(parsed.getTime())) return false;
+            const pyear = parsed.getFullYear();
+            const pmonth = String(parsed.getMonth() + 1).padStart(2, "0");
+            const pday = String(parsed.getDate()).padStart(2, "0");
+            return `${pyear}-${pmonth}-${pday}` === dateStr;
+          } catch {
+            return false;
+          }
+        })
+        .reduce((sum, p) => sum + p.amount, 0);
+        
+      data.push({
+        dateLabel: dayLabel,
+        Inflow: inflowSum,
+        Outflow: outflowSum
+      });
+    }
+    return data;
+  }, [inboundRevenues, dailyPayments]);
+
+  const formatYAxis = (value: number) => {
+    if (value >= 10000000) return `₹${(value / 10000000).toFixed(1)}Cr`;
+    if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
+    if (value >= 1000) return `₹${(value / 1000).toFixed(0)}K`;
+    return `₹${value}`;
+  };
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-slate-900 text-white p-3 border border-slate-700 rounded-lg shadow-xl text-xs font-sans">
+          <p className="font-extrabold mb-1.5 text-slate-300">{label}</p>
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center gap-2 mt-1">
+              <span
+                className="w-2.5 h-2.5 rounded-full inline-block"
+                style={{ backgroundColor: entry.color }}
+              />
+              <span className="font-medium text-slate-400">{entry.name}:</span>
+              <span className="font-bold text-white">
+                {new Intl.NumberFormat('en-IN', {
+                  style: 'currency',
+                  currency: 'INR',
+                  maximumFractionDigits: 0
+                }).format(entry.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
+
   const handleAddLedgerSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!ledgerAmount || isNaN(Number(ledgerAmount))) return;
@@ -291,83 +397,70 @@ export default function DashboardView({
 
   return (
     <div className="space-y-6">
-      {/* ENTERPRISE BRANDING HEADER AREA */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">BuildEstimate BOS</h1>
-          <p className="text-xs font-semibold tracking-wider text-emerald-600 mt-1 uppercase">
-            Powered by Karam AI | Innovation HUB
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="bg-slate-900 text-white text-xs px-3 py-1.5 rounded-full font-medium shadow-sm">
-            👑 Workspace {userRole}
+      {/* COMPACT TOP NAVIGATION HEADER BAR (Max height: 60px) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 flex items-center justify-between gap-3 text-white shadow-md h-[60px] md:h-14 overflow-hidden mb-4">
+        {/* Left Side: Brand Logo & Sync Status */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="material-symbols-outlined text-emerald-400 font-black text-lg flex-shrink-0">
+            construction
           </span>
+          <div className="flex flex-col min-w-0">
+            <h1 className="text-xs md:text-sm font-black tracking-tight text-white truncate leading-none">
+              BuildEstimate Control Centre
+            </h1>
+            <div className="flex items-center gap-1 mt-1">
+              <span className="relative flex h-1.5 w-1.5 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              <span className="text-[8px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wider">Sync Active</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side: Workspace Badge & Project Filter inline */}
+        <div className="flex items-center gap-2 flex-shrink-0 min-w-0">
+          <span className="hidden sm:inline-block bg-slate-800 text-slate-300 text-[9px] px-2 py-1 rounded-md font-bold uppercase tracking-wider border border-slate-700/60 flex-shrink-0">
+            👑 {userRole}
+          </span>
+          <div className="relative flex-shrink-0">
+            <select
+              id="project-select-dropdown"
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="bg-slate-950 border border-slate-700 hover:border-slate-600 rounded-lg py-1 md:py-1.5 pl-2 pr-7 text-[10px] md:text-xs text-white font-bold appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500 max-w-[130px] xs:max-w-[180px] sm:max-w-[240px] truncate"
+            >
+              <option value="all" className="bg-slate-950 text-slate-200 font-bold">
+                📁 All Active Projects ({projects.filter(p => p.status !== "Quotation" && p.status !== "Dead").length})
+              </option>
+              <optgroup label="Ongoing Construction" className="bg-slate-950 text-slate-400 font-bold">
+                {projects.filter(p => p.status === "Active" || p.status === "On-Hold" || p.status === "Completed").map((p) => (
+                  <option key={p.id} value={p.id} className="bg-slate-950 text-slate-100 font-bold">
+                    {p.status === "On-Hold" ? "⏸️" : p.status === "Completed" ? "✅" : "🏗️"} {p.project_name} ({p.status})
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Pre-Sale Quotations / Proposals" className="bg-slate-950 text-slate-400 font-bold">
+                {projects.filter(p => p.status === "Quotation").map((p) => (
+                  <option key={p.id} value={p.id} className="bg-slate-950 text-slate-100 font-bold">
+                    📝 {p.project_name} (Quotation)
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Dead / Rejected" className="bg-slate-950 text-slate-400 font-bold">
+                {projects.filter(p => p.status === "Dead").map((p) => (
+                  <option key={p.id} value={p.id} className="bg-slate-950 text-slate-100 font-bold">
+                    💀 {p.project_name} (Dead)
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-1.5 pointer-events-none text-slate-400">
+              <span className="material-symbols-outlined text-[14px] font-bold">unfold_more</span>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* Dynamic Project Selection & Control Centre Bar */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-6 rounded-2xl text-white border border-slate-700 shadow-xl space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2.5 py-1 rounded-md">
-                BuildEstimate Control Centre
-              </span>
-              <span className="text-xs text-slate-300 font-mono">Real-time Sync Active</span>
-            </div>
-            <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-              Oversight & Site Tracking
-              <span className="material-symbols-outlined text-emerald-400">analytics</span>
-            </h1>
-            <p className="text-slate-300 text-xs max-w-2xl font-medium">
-              Track projectwise financial statements, progress margins, and pre-sale estimates dynamically. Select a specific site below to filter the entire view.
-            </p>
-          </div>
-
-          {/* Project Dropdown Selector */}
-          <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 shadow-lg shrink-0 w-full md:w-80 space-y-1.5">
-            <label htmlFor="project-select-dropdown" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              Select Active Site to Filter:
-            </label>
-            <div className="relative">
-              <select
-                id="project-select-dropdown"
-                value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 hover:border-slate-600 rounded-lg py-2 px-3 text-xs text-white font-bold appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500 pr-8"
-              >
-                <option value="all" className="bg-slate-950 text-slate-200 font-bold">
-                  📁 All Active Projects ({projects.filter(p => p.status !== "Quotation" && p.status !== "Dead").length})
-                </option>
-                <optgroup label="Ongoing Construction" className="bg-slate-950 text-slate-400 font-bold">
-                  {projects.filter(p => p.status === "Active" || p.status === "On-Hold" || p.status === "Completed").map((p) => (
-                    <option key={p.id} value={p.id} className="bg-slate-950 text-slate-100 font-bold">
-                      {p.status === "On-Hold" ? "⏸️" : p.status === "Completed" ? "✅" : "🏗️"} {p.project_name} ({p.status})
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Pre-Sale Quotations / Proposals" className="bg-slate-950 text-slate-400 font-bold">
-                  {projects.filter(p => p.status === "Quotation").map((p) => (
-                    <option key={p.id} value={p.id} className="bg-slate-950 text-slate-100 font-bold">
-                      📝 {p.project_name} (Quotation)
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Dead / Rejected" className="bg-slate-950 text-slate-400 font-bold">
-                  {projects.filter(p => p.status === "Dead").map((p) => (
-                    <option key={p.id} value={p.id} className="bg-slate-950 text-slate-100 font-bold">
-                      💀 {p.project_name} (Dead)
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-              <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-slate-400">
-                <span className="material-symbols-outlined text-sm font-bold">unfold_more</span>
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* Selected Project Quick details strip */}
         {selectedProjectId !== "all" && (
@@ -409,7 +502,14 @@ export default function DashboardView({
             );
           })()
         )}
-      </div>
+
+      <DashboardSummaryCard
+        projects={activeProjectsList}
+        inboundRevenues={filteredInboundRevenues}
+        dailyPayments={filteredDailyPayments}
+        officeExpenses={officeExpenses}
+        vendors={vendors}
+      />
 
       {/* Role-Based Security Enforcement Warning Block for Supervisors & Telecallers */}
       {!isOwnerOrManager ? (
@@ -533,6 +633,70 @@ export default function DashboardView({
                     trending_up
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* 30-Day Liquidity & Cash Flow Analytics */}
+            <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-emerald-600 text-lg">show_chart</span>
+                    30-Day Cash Flow Liquidity
+                  </h3>
+                  <p className="text-[10px] text-slate-500 font-medium">Daily tracking of cash inflows vs site disbursements</p>
+                </div>
+                <div className="flex items-center gap-3 text-[10px] font-bold">
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                    Inflows
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
+                    Payments (Outflow)
+                  </span>
+                </div>
+              </div>
+              <div className="h-64 w-full text-xs font-medium">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis
+                      dataKey="dateLabel"
+                      stroke="#94a3b8"
+                      tickLine={false}
+                      axisLine={false}
+                      fontSize={9}
+                      dy={10}
+                    />
+                    <YAxis
+                      stroke="#94a3b8"
+                      tickLine={false}
+                      axisLine={false}
+                      fontSize={9}
+                      tickFormatter={formatYAxis}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Line
+                      type="monotone"
+                      dataKey="Inflow"
+                      name="Cash Inflow"
+                      stroke="#10b981"
+                      strokeWidth={2.5}
+                      dot={{ r: 2, strokeWidth: 1, fill: "#10b981" }}
+                      activeDot={{ r: 5 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Outflow"
+                      name="Site Outflows"
+                      stroke="#f43f5e"
+                      strokeWidth={2.5}
+                      dot={{ r: 2, strokeWidth: 1, fill: "#f43f5e" }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </div>
           </section>

@@ -1,16 +1,122 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Safety Net: Global default-deny catch-all rule
-    match /{document=**} {
-      allow read, write: if false;
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
     }
 
-    // Secure Siloed User Database Path:
-    // Restricts all read, create, update, and delete actions strictly to the authenticated owner of the account.
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // Helper functions to check roles
+    function isOwner(companyId) {
+      return isAuthenticated() && (
+        request.auth.uid == companyId ||
+        (exists(/databases/$(database)/documents/companies/$(companyId)/profiles/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/companies/$(companyId)/profiles/$(request.auth.uid)).data.user_role == "Owner")
+      );
+    }
+
+    function isManager(companyId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/companies/$(companyId)/profiles/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/companies/$(companyId)/profiles/$(request.auth.uid)).data.user_role == "Manager";
+    }
+
+    function isSupervisor(companyId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/companies/$(companyId)/profiles/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/companies/$(companyId)/profiles/$(request.auth.uid)).data.user_role == "Supervisor";
+    }
+
+    function isTelecaller(companyId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/companies/$(companyId)/profiles/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/companies/$(companyId)/profiles/$(request.auth.uid)).data.user_role == "Telecaller";
+    }
+
+    function hasAnyRole(companyId) {
+      return isOwner(companyId) || isManager(companyId) || isSupervisor(companyId) || isTelecaller(companyId);
+    }
+
+    match /companies/{companyId} {
+      // Allow base document access if user belongs to the company
+      allow read, write: if isOwner(companyId);
+      allow read: if hasAnyRole(companyId);
+
+      // Profiles Collection
+      match /profiles/{userId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId);
+      }
+
+      // Audit Log (Append-only for all roles)
+      match /audit_log/{logId} {
+        allow read: if hasAnyRole(companyId);
+        allow create: if hasAnyRole(companyId);
+        allow update, delete: if false;
+      }
+
+      // Supervisor-focused collections
+      match /projects/{projectId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId) || isSupervisor(companyId);
+      }
+
+      match /daily_payments/{paymentId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId) || isSupervisor(companyId);
+      }
+
+      match /material_stocks/{materialId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId) || isSupervisor(companyId);
+      }
+
+      // Telecaller-focused collections
+      match /leads/{leadId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId) || isTelecaller(companyId);
+      }
+
+      match /properties/{propertyId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId) || isTelecaller(companyId);
+      }
+
+      match /clients/{clientId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId) || isTelecaller(companyId);
+      }
+
+      // Business & Admin collections
+      match /inbound_revenues/{revenueId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId);
+      }
+
+      match /vendors/{vendorId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId);
+      }
+
+      match /purchase_orders/{poId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId);
+      }
+
+      match /office_expenses/{expId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId);
+      }
+
+      match /deal_adjustments/{daId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId);
+      }
+
+      match /alerts/{alId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId);
+      }
     }
   }
 }
