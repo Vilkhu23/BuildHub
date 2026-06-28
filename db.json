@@ -81,9 +81,9 @@
       "location": "Sector 125, Kharar",
       "asking_price": 7800000,
       "target_selling_price": 8550000,
-      "source_person_name: ": "Rahul Sharma (Direct)",
       "source_person_name": "Rahul Sharma (Direct)",
       "source_person_type": "Owner",
+      "source_person_phone": "9876543210",
       "image_url": "https://lh3.googleusercontent.com/aida-public/AB6AXuBKCjFNjQm8SWpBMT2PqY3MlKIQ9-Srb_sJ3hZIvPB6mI-sdNYP-G8GnkK9m6KqDg8a4xbdu-RYxDp3toSIVgUOihaFhihC8dcJOzAVjala-wvjUE45VvOsJofcB8kXJSmC7d2BgxJBBT6l3hQvvo0N02Vg2PR3_x4efwMWhvYHwes0SG2b-T4CoSfwBrM3NKleq71COVqh3j2dtL054I1gAmjf7Cge9QUCxhsjCSYV3XbIbsSTe4fEpAbqeSqJODR_S8Qa1AqopdaM",
       "status": "Available"
     },
@@ -96,6 +96,7 @@
       "target_selling_price": 11200000,
       "source_person_name": "Heritage Brokers",
       "source_person_type": "CP",
+      "source_person_phone": "9812345678",
       "image_url": "https://lh3.googleusercontent.com/aida-public/AB6AXuBg1FX6WlwaX3P8fTYruqIC2SfGJByeZxELcQtcg6ySMFtc8HfmCONl_nohGJsuOxkchBeyuZ02BO1vbSJ3NBNA_0jvSw1KzCFFQRpmdsqJTOBXsYloDqsM5hqlqdDItMZHpxpUTJIxeD2U8jGF4HslVagAv8Qa8VJI_72WvnDs0OpyasKp38E-EmfBTv4uKT6mbddBcBfeZKQg9JSIaZChA8BSzJFiPI9toG-qKd5fIeUBCHu4JhPUfs4hFLfiLB5PAxug-VHX86S-",
       "status": "Hold"
     },
@@ -108,6 +109,7 @@
       "target_selling_price": 4500000,
       "source_person_name": "Amit Verma (Re-sale)",
       "source_person_type": "Owner",
+      "source_person_phone": "9898989898",
       "image_url": "https://lh3.googleusercontent.com/aida-public/AB6AXuDfbKozjgD6AU0Ej4oGLFGJjAQRBVnlYSMV626C2DEhZ6CRYAJkF5mRdXnF6XgiJjzttz9hppRkdrA8gn70akhzKCETXPVCiJaUSN1ffUbUXRX97dllvqk6cJrQG21eJ_Fz1goQiisK0fsWQ0eLaYhOC8-VzwUvh8-ZewRIIXAAEYeCo-YAt3qZvqrMgWoBARGhku8vcTr2TQhfRSz3k2TtTQGdyOEzwFSmm-u3XzikQ95VxcbQ5Cw9nXL5tW4-VD1ik0ug5E-LIRNd",
       "status": "Available"
     },
@@ -120,6 +122,7 @@
       "target_selling_price": 24000000,
       "source_person_name": "J.K. Developers",
       "source_person_type": "Builder",
+      "source_person_phone": "9876540000",
       "image_url": "https://lh3.googleusercontent.com/aida-public/AB6AXuAgrlBoiL2rZBpKzQXOWWkdXPWjHo7ZVWGKRJ6DTkBS_wrrgyyrSEAERpw6iVvmBktjhXhxq9Aely12tZQLDXPp19Q7LG6p02ie3BpGzDwaRTD52DPnVZFSFTP1vTcGwc-BYgN712ZyjXCfvzR9hT0k4VsW9rm-7KKKjYgp-cGoJdsMF9ymBQ00V4DyQgE-hVcseISESOai3mnovy1UBkd113nRXwb8dQ-GMmJnsDWz2AWa5zlVRG8Z6qR3lki2QuNk-eVBfji5gYSf",
       "status": "Available"
     }

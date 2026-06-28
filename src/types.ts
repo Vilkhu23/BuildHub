@@ -41,6 +41,7 @@ export interface Property {
   target_selling_price: number;
   source_person_name: string;
   source_person_type: 'Builder' | 'Owner' | 'CP' | 'Rental Investor';
+  source_person_phone: string;
   image_url: string;
   status: 'Available' | 'Hold' | 'Sold';
 }

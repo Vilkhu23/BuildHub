@@ -36,6 +36,7 @@ export default function PropertyView({
   const [newPropSellingPrice, setNewPropSellingPrice] = useState("");
   const [newPropSource, setNewPropSource] = useState("");
   const [newPropSourceType, setNewPropSourceType] = useState<'Builder' | 'Owner' | 'CP' | 'Rental Investor'>("Owner");
+  const [newPropSourcePhone, setNewPropSourcePhone] = useState("");
 
   // Add Buyer Requirement states
   const [isAddBuyerOpen, setIsAddBuyerOpen] = useState(false);
@@ -62,30 +63,49 @@ export default function PropertyView({
   const [encodedPitch, setEncodedPitch] = useState("");
   const [mapsLinks, setMapsLinks] = useState<{ title: string; uri: string }[]>([]);
 
-  const handleOpenMatcher = (prop: Property) => {
-    setSelectedProperty(prop);
-    setBuyerName("");
-    setBuyerPhone("");
+  const copyToClipboard = (text: string) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => alert("Copied to clipboard!"))
+        .catch(() => fallbackCopyText(text));
+    } else {
+      fallbackCopyText(text);
+    }
+  };
+
+  const fallbackCopyText = (text: string) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      alert("Copied to clipboard!");
+    } catch (err) {
+      console.error('Fallback copy failed', err);
+    }
+    document.body.removeChild(textArea);
+  };
+
+  const generatePitchAndMatch = async (prop: Property, name: string, phone: string) => {
+    setIsMatching(true);
     setCompiledPitch("");
     setEncodedPitch("");
     setMapsLinks([]);
-    setIsDrawerOpen(true);
-  };
-
-  const handleRunAutoMatcher = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProperty) return;
-    setIsMatching(true);
 
     try {
       const res = await fetch("/api/auto-match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientName: buyerName,
-          propertyType: selectedProperty.property_type,
-          preferredLocation: selectedProperty.location,
-          maxBudget: selectedProperty.target_selling_price
+          clientName: name || "Valued Client",
+          propertyType: prop.property_type,
+          preferredLocation: prop.location,
+          maxBudget: prop.target_selling_price
         }),
       });
 
@@ -94,7 +114,7 @@ export default function PropertyView({
         setCompiledPitch(data.pitch || "");
         setEncodedPitch(data.encodedPitch || "");
         setMapsLinks(data.mapsLinks || []);
-        onAddLog(`Matched buyer "${buyerName}" against property "${selectedProperty.title}" & generated WhatsApp pitch.`);
+        onAddLog(`Matched buyer "${name || "Valued Client"}" against property "${prop.title}" & generated WhatsApp pitch.`);
       } else {
         alert("Error: " + (data.error || "Failed to generate pitch."));
       }
@@ -106,9 +126,23 @@ export default function PropertyView({
     }
   };
 
+  const handleOpenMatcher = (prop: Property, defaultName: string = "Valued Client", defaultPhone: string = "") => {
+    setSelectedProperty(prop);
+    setBuyerName(defaultName);
+    setBuyerPhone(defaultPhone);
+    setIsDrawerOpen(true);
+    generatePitchAndMatch(prop, defaultName, defaultPhone);
+  };
+
+  const handleRunAutoMatcher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProperty) return;
+    generatePitchAndMatch(selectedProperty, buyerName, buyerPhone);
+  };
+
   const handleAddPropertySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPropTitle || !newPropLocation || !newPropSellingPrice) return;
+    if (!newPropTitle || !newPropLocation || !newPropSellingPrice || !newPropSourcePhone) return;
 
     if (onAddProperty) {
       onAddProperty({
@@ -119,6 +153,7 @@ export default function PropertyView({
         target_selling_price: Number(newPropSellingPrice),
         source_person_name: newPropSource || "Direct Owner",
         source_person_type: newPropSourceType,
+        source_person_phone: newPropSourcePhone,
         image_url: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80",
         status: "Available"
       });
@@ -130,6 +165,7 @@ export default function PropertyView({
     setNewPropAskingPrice("");
     setNewPropSellingPrice("");
     setNewPropSource("");
+    setNewPropSourcePhone("");
     setIsAddPropertyOpen(false);
   };
 
@@ -320,6 +356,10 @@ export default function PropertyView({
                       <span className="font-bold text-slate-900">{prop.source_person_name}</span>
                     </div>
                     <div className="flex justify-between">
+                      <span className="text-slate-500 font-medium">Dealer Mobile No:</span>
+                      <span className="font-mono font-bold text-slate-900">{prop.source_person_phone || "9876543210"}</span>
+                    </div>
+                    <div className="flex justify-between">
                       <span className="text-slate-500 font-medium">Internal supplier Cost:</span>
                       <span className="font-bold text-slate-900">
                         {canSeeSupplierCosts ? `₹${prop.asking_price.toLocaleString()}` : "🔒 RESTRICTED"}
@@ -415,10 +455,7 @@ export default function PropertyView({
                               <span className="font-bold text-slate-800 truncate max-w-[65%]" title={match.title}>{match.title}</span>
                               <button
                                 onClick={() => {
-                                  setSelectedProperty(match);
-                                  setBuyerName(req.buyer_name);
-                                  setBuyerPhone(req.buyer_phone);
-                                  setIsDrawerOpen(true);
+                                  handleOpenMatcher(match, req.buyer_name, req.buyer_phone);
                                 }}
                                 className="bg-slate-950 text-white font-extrabold text-[10px] px-2 py-1 rounded hover:bg-black transition-colors"
                               >
@@ -501,17 +538,30 @@ export default function PropertyView({
               </form>
 
               {/* Sales pitch display section */}
-              {compiledPitch && (
+              {isMatching ? (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 animate-pulse">
+                  <div className="flex justify-between items-center">
+                    <div className="h-3 w-40 bg-slate-300 rounded animate-pulse" />
+                    <div className="h-3 w-16 bg-slate-300 rounded animate-pulse" />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="h-4 w-full bg-slate-200 rounded animate-pulse" />
+                    <div className="h-4 w-5/6 bg-slate-200 rounded animate-pulse" />
+                    <div className="h-4 w-4/5 bg-slate-200 rounded animate-pulse" />
+                    <div className="h-4 w-full bg-slate-200 rounded animate-pulse" />
+                  </div>
+                  <div className="text-center text-xs text-slate-400 font-bold uppercase mt-2">
+                    🤖 Auto-compiling marketing pitch...
+                  </div>
+                </div>
+              ) : compiledPitch && (
                 <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-200/60 space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">
                       Gemini Auto-Compiled Marketing Pitch
                     </span>
                     <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(compiledPitch);
-                        alert("Copied to clipboard!");
-                      }}
+                      onClick={() => copyToClipboard(compiledPitch)}
                       className="text-emerald-700 hover:underline text-xs font-bold"
                     >
                       Copy Text
@@ -551,7 +601,7 @@ export default function PropertyView({
             {compiledPitch && (
               <div className="border-t border-slate-100 pt-4 bg-white">
                 <a
-                  href={`https://wa.me/${buyerPhone || "919876543210"}?text=${encodedPitch}`}
+                  href={`https://wa.me/${buyerPhone ? buyerPhone.replace(/[^0-9]/g, "") : "919876543210"}?text=${encodedPitch}`}
                   target="_blank"
                   rel="noreferrer"
                   className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center gap-2 font-bold text-xs uppercase tracking-wider shadow-md shadow-emerald-600/15"
@@ -679,6 +729,20 @@ export default function PropertyView({
                     <option value="Rental Investor">Investor</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Mobile No of Dealer *
+                </label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="e.g. 919876543210"
+                  value={newPropSourcePhone}
+                  onChange={(e) => setNewPropSourcePhone(e.target.value)}
+                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none font-semibold"
+                />
               </div>
 
               <div className="pt-2 flex gap-3">

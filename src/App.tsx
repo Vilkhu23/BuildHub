@@ -397,7 +397,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-grow w-full max-w-7xl mx-auto px-4 py-6 md:py-8">
+      <main className="flex-grow w-full max-w-7xl mx-auto px-4 pt-6 pb-24 md:py-8">
         <div className="space-y-8">
           {/* Dynamic RBAC Screen Router */}
           {currentTab === "dashboard" && (
