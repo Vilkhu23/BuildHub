@@ -311,17 +311,17 @@ export default function PropertyView({
               filteredProperties.map((prop) => (
               <div
                 key={prop.id}
-                className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row"
+                className="bg-white/80 border border-slate-100 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col md:flex-row p-4 gap-5"
               >
                 {/* Image section */}
-                <div className="relative w-full md:w-52 h-44 shrink-0 bg-slate-100">
+                <div className="relative w-full md:w-48 h-40 shrink-0 bg-slate-50 rounded-xl overflow-hidden">
                   <img
                     src={prop.image_url}
                     alt={prop.title}
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
                   />
-                  <span className={`absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider text-white shadow-sm ${
+                  <span className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider text-white shadow-xs ${
                     prop.status === "Available" ? "bg-emerald-600" : "bg-amber-600"
                   }`}>
                     {prop.status}
@@ -329,48 +329,72 @@ export default function PropertyView({
                 </div>
 
                 {/* Details Section */}
-                <div className="p-5 flex-grow flex flex-col justify-between space-y-3">
+                <div className="flex-grow flex flex-col justify-between space-y-3.5">
                   <div>
                     <div className="flex justify-between items-start gap-2">
-                      <h3 className="font-extrabold text-slate-900 text-base leading-tight hover:underline">
-                        {prop.title}
-                      </h3>
-                      <span className="text-base font-black text-slate-900 shrink-0">
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">{prop.property_type}</span>
+                        <h3 className="font-bold text-slate-900 text-base leading-snug hover:underline mt-0.5">
+                          {prop.title}
+                        </h3>
+                      </div>
+                      <span className="text-base font-black text-slate-900 shrink-0 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100">
                         ₹{(prop.target_selling_price / 100000).toFixed(1)}L
                       </span>
                     </div>
-                    <div className="flex items-center gap-0.5 text-slate-500 text-xs mt-1">
-                      <span className="material-symbols-outlined text-sm">location_on</span>
+                    <div className="flex items-center gap-1 text-slate-500 text-xs mt-1.5 font-medium">
+                      <span className="material-symbols-outlined text-sm text-slate-400">location_on</span>
                       <span>{prop.location}</span>
                     </div>
                   </div>
 
-                  {/* Confidential specs (authenticated metrics) */}
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/50 space-y-1.5 text-xs">
-                    <div className="flex justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                      <span>Confidential Supplier Specs</span>
-                      <span className="text-emerald-700">🔒 Broker Access</span>
+                  {/* Confidential specs (authenticated metrics - ONLY OWNER OR MANAGER) */}
+                  {activeRole === "Owner" || activeRole === "Manager" ? (
+                    <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/50 space-y-2 text-xs">
+                      <div className="flex justify-between items-center pb-1.5 border-b border-slate-100">
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-700 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">verified_user</span>
+                          Confidential Supplier Sourcing
+                        </span>
+                        <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded text-[9px] font-bold">
+                          Authorized View
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-slate-400 font-bold block text-[9px] uppercase tracking-wider">Source Name</span>
+                          <span className="font-extrabold text-slate-800">{prop.source_person_name}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-bold block text-[9px] uppercase tracking-wider">Source Type</span>
+                          <span className="font-bold text-slate-800">{prop.source_person_type}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-bold block text-[9px] uppercase tracking-wider">Internal Cost (Asking)</span>
+                          <span className="font-extrabold text-indigo-600">₹{prop.asking_price?.toLocaleString()}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-bold block text-[9px] uppercase tracking-wider">Dealer Phone</span>
+                          <span className="font-mono font-bold text-slate-800">{prop.source_person_phone || "N/A"}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 font-medium">Original Source:</span>
-                      <span className="font-bold text-slate-900">{prop.source_person_name}</span>
+                  ) : (
+                    <div className="bg-slate-50/40 p-3.5 rounded-xl border border-slate-100 text-center space-y-1">
+                      <div className="flex items-center justify-center gap-1.5 text-slate-400 text-xs font-bold">
+                        <span className="material-symbols-outlined text-sm">lock</span>
+                        <span className="uppercase tracking-wider text-[10px]">Confidential Supplier Sourcing</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-medium">
+                        Requires Owner or Manager privileges to view dealer information and internal asking costs.
+                      </p>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 font-medium">Dealer Mobile No:</span>
-                      <span className="font-mono font-bold text-slate-900">{prop.source_person_phone || "9876543210"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 font-medium">Internal supplier Cost:</span>
-                      <span className="font-bold text-slate-900">
-                        {canSeeSupplierCosts ? `₹${prop.asking_price.toLocaleString()}` : "🔒 RESTRICTED"}
-                      </span>
-                    </div>
-                  </div>
+                  )}
 
                   {/* Action Pitch button */}
                   <button
                     onClick={() => handleOpenMatcher(prop)}
-                    className="w-full h-10 bg-slate-950 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                    className="w-full h-10 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
                   >
                     <span className="material-symbols-outlined text-base">chat</span>
                     Generate Dynamic Pitch & Share

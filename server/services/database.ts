@@ -7,11 +7,11 @@ const DB_FILE = path.join(process.cwd(), "db.json");
 // Seed Data
 export const defaultState: DatabaseState = {
   profiles: [
-    { id: "ak-1", name: "Amit Kumar", user_role: "Manager", account_status: "Active", parent_owner_id: "owner-1" },
-    { id: "ps-1", name: "Priya Sharma", user_role: "Telecaller", account_status: "Active", parent_owner_id: "owner-1" },
-    { id: "rk-1", name: "Rahul Khan", user_role: "Supervisor", account_status: "Active", parent_owner_id: "owner-1" },
-    { id: "vj-1", name: "Vikram Joshi", user_role: "Manager", account_status: "Active", parent_owner_id: "owner-1" },
-    { id: "owner-1", name: "Rajesh Singh", user_role: "Owner", account_status: "Active", parent_owner_id: null }
+    { id: "ak-1", name: "Amit Kumar", user_role: "Manager", account_status: "Active", parent_owner_id: "owner-1", tenant_id: "owner-1" },
+    { id: "ps-1", name: "Priya Sharma", user_role: "Telecaller", account_status: "Active", parent_owner_id: "owner-1", tenant_id: "owner-1" },
+    { id: "rk-1", name: "Rahul Khan", user_role: "Supervisor", account_status: "Active", parent_owner_id: "owner-1", tenant_id: "owner-1" },
+    { id: "vj-1", name: "Vikram Joshi", user_role: "Manager", account_status: "Active", parent_owner_id: "owner-1", tenant_id: "owner-1" },
+    { id: "owner-1", name: "Rajesh Singh", user_role: "Owner", account_status: "Active", parent_owner_id: null, tenant_id: "owner-1" }
   ],
   clients: [],
   projects: [],
@@ -24,7 +24,19 @@ export const defaultState: DatabaseState = {
   vendors: [],
   purchase_orders: [],
   alerts: [],
-  buyer_requirements: []
+  buyer_requirements: [],
+  tenant_profiles: [
+    {
+      id: "tp-1",
+      tenant_id: "owner-1",
+      company_name: "BuildEstimate Inc.",
+      business_logo_url: "https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=150&auto=format&fit=crop",
+      gstin: "27AAACB1234C1Z0",
+      address: "4th Floor, Innovation Hub, Sector 62, Noida, UP - 201301",
+      phone_number: "+91 98765 43210"
+    }
+  ],
+  leads: []
 };
 
 // Database utility functions

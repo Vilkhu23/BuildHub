@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { Project, CriticalAlert, Profile, InboundRevenue, DailyPayment, OfficeExpense, DealAdjustment, Vendor } from "../types";
+import { Project, CriticalAlert, Profile, InboundRevenue, DailyPayment, OfficeExpense, DealAdjustment, Vendor, Client, TenantProfile } from "../types";
 import DashboardSummaryCard from "./DashboardSummaryCard";
+import { checkProjectLimit } from "../utils/subscription";
 import {
   ResponsiveContainer,
   LineChart,
@@ -14,6 +15,7 @@ import {
 
 interface DashboardViewProps {
   projects: Project[];
+  clients?: Client[];
   alerts: CriticalAlert[];
   profiles: Profile[];
   inboundRevenues: InboundRevenue[];
@@ -31,10 +33,14 @@ interface DashboardViewProps {
   onAddDailyPayment?: (pay: DailyPayment) => void;
   onAddOfficeExpense?: (exp: Omit<OfficeExpense, "id" | "date">) => void;
   onAddDealAdjustment?: (adj: Omit<DealAdjustment, "id">) => void;
+  onAddClient?: (client: Omit<Client, "id">) => void;
+  tenantProfile: TenantProfile;
+  onOpenUpgradeModal: () => void;
 }
 
 export default function DashboardView({
   projects,
+  clients = [],
   alerts,
   profiles,
   inboundRevenues,
@@ -52,6 +58,9 @@ export default function DashboardView({
   onAddDailyPayment,
   onAddOfficeExpense,
   onAddDealAdjustment,
+  onAddClient,
+  tenantProfile,
+  onOpenUpgradeModal,
 }: DashboardViewProps) {
   const isOwnerOrManager = userRole === "Owner" || userRole === "Manager";
 
@@ -92,7 +101,41 @@ export default function DashboardView({
     onConfirm: () => void;
   } | null>(null);
 
+  // Add Client Modal States
+  const [isAddClientOpen, setIsAddClientOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
+  const [newClientLocation, setNewClientLocation] = useState("");
+
+  const handleCreateClient = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClientName.trim() || !newClientPhone.trim()) return;
+
+    if (onAddClient) {
+      onAddClient({
+        name: newClientName.trim(),
+        phone: newClientPhone.trim(),
+        tags: ["Buyer"],
+        project_location: newClientLocation.trim() || undefined
+      });
+    }
+
+    // Reset fields and close modal
+    setNewClientName("");
+    setNewClientPhone("");
+    setNewClientLocation("");
+    setIsAddClientOpen(false);
+  };
+
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
+  const handleOpenAddProject = () => {
+    const plan = tenantProfile?.subscription_plan || "Free Trial";
+    if (checkProjectLimit(projects, plan)) {
+      onOpenUpgradeModal();
+    } else {
+      setIsAddProjectOpen(true);
+    }
+  };
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectType, setNewProjectType] = useState("Residential");
   const [newProjectLocation, setNewProjectLocation] = useState("");
@@ -397,29 +440,64 @@ export default function DashboardView({
 
   return (
     <div className="space-y-6">
-      {/* COMPACT TOP NAVIGATION HEADER BAR (Max height: 60px) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 flex items-center justify-between gap-3 text-white shadow-md h-[60px] md:h-14 overflow-hidden mb-4">
+      {/* COMPACT TOP NAVIGATION HEADER BAR (Max height: 65px) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 flex items-center justify-between gap-3 text-white shadow-md h-[65px] md:h-16 overflow-hidden mb-4">
         {/* Left Side: Brand Logo & Sync Status */}
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="material-symbols-outlined text-emerald-400 font-black text-lg flex-shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="material-symbols-outlined text-emerald-400 font-black text-xl flex-shrink-0">
             construction
           </span>
           <div className="flex flex-col min-w-0">
             <h1 className="text-xs md:text-sm font-black tracking-tight text-white truncate leading-none">
-              BuildEstimate Control Centre
+              BuildEstimate BOS
             </h1>
-            <div className="flex items-center gap-1 mt-1">
-              <span className="relative flex h-1.5 w-1.5 flex-shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-              </span>
-              <span className="text-[8px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wider">Sync Active</span>
-            </div>
+            <span className="text-[8px] md:text-[9px] font-bold text-emerald-400 uppercase tracking-widest mt-1 block whitespace-nowrap">
+              Powered by Karam AI | Innovation HUB
+            </span>
           </div>
         </div>
 
         {/* Right Side: Workspace Badge & Project Filter inline */}
         <div className="flex items-center gap-2 flex-shrink-0 min-w-0">
+          {/* Subscription Tier Badge */}
+          {(() => {
+            const plan = tenantProfile?.subscription_plan || "Free Trial";
+            if (plan === "Free Trial") {
+              return (
+                <button
+                  onClick={onOpenUpgradeModal}
+                  className="bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[9px] px-2 py-1 rounded-md font-extrabold uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95 cursor-pointer shrink-0"
+                  title="Click to upgrade"
+                >
+                  <span>Free Trial</span>
+                  <span className="material-symbols-outlined text-[10px] font-black">arrow_upward</span>
+                </button>
+              );
+            } else if (plan === "Pro Growth") {
+              return (
+                <button
+                  onClick={onOpenUpgradeModal}
+                  className="bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-[9px] px-2 py-1 rounded-md font-extrabold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shrink-0"
+                  title="View subscription"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  <span>Pro Growth</span>
+                </button>
+              );
+            } else {
+              return (
+                <button
+                  onClick={onOpenUpgradeModal}
+                  className="bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-400 text-[9px] px-2 py-1 rounded-md font-extrabold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shrink-0"
+                  title="View subscription"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse shrink-0" />
+                  <span>Enterprise</span>
+                </button>
+              );
+            }
+          })()}
+
           <span className="hidden sm:inline-block bg-slate-800 text-slate-300 text-[9px] px-2 py-1 rounded-md font-bold uppercase tracking-wider border border-slate-700/60 flex-shrink-0">
             👑 {userRole}
           </span>
@@ -933,7 +1011,7 @@ export default function DashboardView({
       </section>
 
       {/* Quick Actions (Full Mobile Targets) */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <button
           onClick={() => setTab("estimates")}
           className="h-12 flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl active:scale-[0.98] transition-all shadow-sm"
@@ -957,11 +1035,20 @@ export default function DashboardView({
         </button>
         {isOwnerOrManager && (
           <button
-            onClick={() => setIsAddProjectOpen(true)}
+            onClick={handleOpenAddProject}
             className="h-12 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl active:scale-[0.98] transition-all shadow-sm animate-fade-in"
           >
             <span className="material-symbols-outlined text-lg">add</span>
             Add Project
+          </button>
+        )}
+        {isOwnerOrManager && (
+          <button
+            onClick={() => setIsAddClientOpen(true)}
+            className="h-12 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl active:scale-[0.98] transition-all shadow-sm animate-fade-in"
+          >
+            <span className="material-symbols-outlined text-lg">person_add</span>
+            Add New Client
           </button>
         )}
       </section>
@@ -976,13 +1063,23 @@ export default function DashboardView({
             </h2>
             <div className="flex items-center gap-3">
               {isOwnerOrManager && (
-                <button
-                  onClick={() => setIsAddProjectOpen(true)}
-                  className="text-emerald-700 font-bold text-xs flex items-center gap-0.5 hover:underline animate-fade-in"
-                >
-                  <span className="material-symbols-outlined text-sm font-bold">add</span>
-                  Add Project / Quote
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsAddClientOpen(true)}
+                    className="text-indigo-700 font-bold text-xs flex items-center gap-0.5 hover:underline animate-fade-in"
+                  >
+                    <span className="material-symbols-outlined text-sm font-bold">person_add</span>
+                    Add Client
+                  </button>
+                  <span className="text-slate-300 text-xs font-bold">|</span>
+                  <button
+                    onClick={handleOpenAddProject}
+                    className="text-emerald-700 font-bold text-xs flex items-center gap-0.5 hover:underline animate-fade-in"
+                  >
+                    <span className="material-symbols-outlined text-sm font-bold">add</span>
+                    Add Project / Quote
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1328,6 +1425,86 @@ export default function DashboardView({
           </section>
         )}
       </div>
+
+      {/* ADD NEW CLIENT MODAL */}
+      {isAddClientOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                <span className="material-symbols-outlined text-indigo-600">person_add</span>
+                Add New Client
+              </h3>
+              <button 
+                onClick={() => setIsAddClientOpen(false)} 
+                className="material-symbols-outlined text-slate-400 hover:text-black transition-colors"
+              >
+                close
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateClient} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Client Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Ramesh Kumar"
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Client Phone
+                </label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="e.g. +91 98765 43210"
+                  value={newClientPhone}
+                  onChange={(e) => setNewClientPhone(e.target.value)}
+                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Project Location
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sector 62, Noida, UP"
+                  value={newClientLocation}
+                  onChange={(e) => setNewClientLocation(e.target.value)}
+                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddClientOpen(false)}
+                  className="w-1/2 h-10 border border-slate-300 hover:bg-slate-50 rounded-lg font-bold text-xs uppercase text-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-colors shadow-sm"
+                >
+                  Add Client
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ADD NEW PROJECT MODAL */}
       {isAddProjectOpen && (

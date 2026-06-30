@@ -15,6 +15,18 @@ export interface CompanySettings {
   logoUrl: string;
 }
 
+export interface TenantProfile {
+  id: string;
+  tenant_id: string;
+  company_name: string;
+  business_logo_url: string;
+  gstin: string;
+  address: string;
+  phone_number: string;
+  email?: string;
+  subscription_plan?: 'Free Trial' | 'Pro Growth' | 'Enterprise Matrix';
+}
+
 export interface Profile {
   id: string;
   name: string;
@@ -22,6 +34,7 @@ export interface Profile {
   account_status: 'Active' | 'Disabled';
   avatar_url?: string;
   parent_owner_id?: string | null;
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface Client {
@@ -29,6 +42,8 @@ export interface Client {
   name: string;
   phone: string;
   tags: ('Buyer' | 'Seller' | 'Vendor' | 'Contractor')[];
+  project_location?: string;
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface Project {
@@ -41,10 +56,16 @@ export interface Project {
   completion_pct: number;
   total_budget: number;
   spent: number;
+  tenant_id?: string; // Tenant isolation key
   estimates?: {
     civil: LineItem[];
     electrical: LineItem[];
     finishes: LineItem[];
+    interior_finishing?: LineItem[];
+    civil_vendor_name?: string;
+    electrical_vendor_name?: string;
+    finishes_vendor_name?: string;
+    interior_vendor_name?: string;
   };
   gst_rate?: number;
 }
@@ -72,6 +93,7 @@ export interface InboundRevenue {
   payment_stage: 'Advance' | 'Partial' | 'Final';
   date: string;
   registry_deadline?: string;
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface DailyPayment {
@@ -82,6 +104,7 @@ export interface DailyPayment {
   remarks: string;
   category: 'Labor' | 'Materials' | 'Miscellaneous';
   date: string;
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface OfficeExpense {
@@ -89,6 +112,7 @@ export interface OfficeExpense {
   subject: string;
   amount: number;
   date: string;
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface DealAdjustment {
@@ -97,6 +121,7 @@ export interface DealAdjustment {
   direction: 'Inbound_Commission' | 'Outbound_Payout';
   amount: number;
   deal_detail: string;
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface MaterialStock {
@@ -109,6 +134,7 @@ export interface MaterialStock {
   critical_level: number;
   status: 'In Stock' | 'Low Stock' | 'Out of Stock';
   icon: string;
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface Vendor {
@@ -125,6 +151,7 @@ export interface Vendor {
   balance_due: number;
   on_time_delivery_pct: number;
   quality_rating: number;
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface PurchaseOrder {
@@ -145,6 +172,7 @@ export interface PurchaseOrder {
     date: string;
     done: boolean;
   }[];
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface CriticalAlert {
@@ -153,6 +181,7 @@ export interface CriticalAlert {
   title: string;
   description: string;
   project_name?: string;
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface BuyerRequirement {
@@ -163,6 +192,7 @@ export interface BuyerRequirement {
   max_budget: number;
   property_type: 'Plot' | 'Villa' | 'Flat' | 'Commercial';
   status: 'Pending' | 'Matched' | 'Closed';
+  tenant_id?: string; // Tenant isolation key
 }
 
 export interface DatabaseState {
@@ -179,4 +209,17 @@ export interface DatabaseState {
   purchase_orders: PurchaseOrder[];
   alerts: CriticalAlert[];
   buyer_requirements: BuyerRequirement[];
+  tenant_profiles: TenantProfile[]; // SaaS Tenant profiles
+  leads?: Lead[];
+}
+
+export interface Lead {
+  id: string;
+  tenant_id: string;
+  client_name: string;
+  phone_number: string;
+  location: string;
+  source: 'Meta Ads' | 'WhatsApp' | 'Google Search' | 'Referral';
+  status: 'New' | 'Quoted' | 'Follow-up';
+  created_at: string;
 }

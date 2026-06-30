@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { DatabaseState, Profile, DailyPayment, PurchaseOrder, MaterialStock, Project, InboundRevenue, OfficeExpense, DealAdjustment, Property, BuyerRequirement } from "./types";
+import { DatabaseState, Profile, DailyPayment, PurchaseOrder, MaterialStock, Project, InboundRevenue, OfficeExpense, DealAdjustment, Property, BuyerRequirement, Client, Lead, TenantProfile } from "./types";
 
 // Import modular screens
 import Navigation from "./components/Navigation";
@@ -10,11 +10,14 @@ import OrdersView from "./components/OrdersView";
 import DailyLogView from "./components/DailyLogView";
 import PropertyView from "./components/PropertyView";
 import SettingsView from "./components/SettingsView";
+import ClientEstimatePortal from "./components/ClientEstimatePortal";
+import SubscriptionGate from "./components/SubscriptionGate";
+import LeadsView from "./components/LeadsView";
 
 // Import Firebase Client Integration
 import { auth, googleProvider, db as firestoreDb } from "./lib/firebase";
 import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where } from "firebase/firestore";
 
 enum OperationType {
   CREATE = 'create',
@@ -100,16 +103,58 @@ export default function App() {
   const [activityLogs, setActivityLogs] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
 
+  // Client Shared Snapshot state
+  const [sharedEstimate, setSharedEstimate] = useState<any>(null);
+  const [sharedLoading, setSharedLoading] = useState(false);
+  const [sharedError, setSharedError] = useState<string | null>(null);
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+  const [selectedProjectIdForEstimates, setSelectedProjectIdForEstimates] = useState<string>("");
+
   const addActivityLog = (message: string) => {
     setActivityLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${message}`, ...prev.slice(0, 19)]);
   };
+
+  // Check URL parameters for a public estimate snapshot link on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const shareId = urlParams.get("share");
+    if (shareId) {
+      const fetchSharedEstimate = async () => {
+        setSharedLoading(true);
+        try {
+          addActivityLog(`Retrieving public estimate snapshot [${shareId}] from Firestore...`);
+          const docRef = doc(firestoreDb, "public_estimates", shareId);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            setSharedEstimate(docSnap.data());
+            addActivityLog(`Successfully resolved public estimate: ${shareId}`);
+          } else {
+            setSharedError("This shared estimate snapshot is invalid, does not exist, or has been revoked.");
+            addActivityLog(`Public estimate snapshot [${shareId}] not found.`);
+          }
+        } catch (err: any) {
+          console.error("Error fetching public snapshot:", err);
+          setSharedError(`Unable to fetch public snapshot: ${err.message || err}`);
+          addActivityLog(`Error reading snapshot [${shareId}]: ${err.message || err}`);
+        } finally {
+          setSharedLoading(false);
+        }
+      };
+      fetchSharedEstimate();
+    }
+  }, []);
 
   // Save document to specified company subcollection
   const saveDocument = async (subcollection: string, id: string, data: any) => {
     if (!auth.currentUser) return;
     try {
-      const docRef = doc(firestoreDb, "companies", auth.currentUser.uid, subcollection, id);
-      await setDoc(docRef, sanitizeFirestoreData(data));
+      const currentTenantId = auth.currentUser.uid;
+      const dataWithTenant = {
+        ...data,
+        tenant_id: currentTenantId
+      };
+      const docRef = doc(firestoreDb, "companies", currentTenantId, subcollection, id);
+      await setDoc(docRef, sanitizeFirestoreData(dataWithTenant));
     } catch (err: any) {
       handleFirestoreError(err, OperationType.WRITE, `companies/${auth.currentUser.uid}/${subcollection}/${id}`);
     }
@@ -147,12 +192,22 @@ export default function App() {
               { key: "office_expenses", path: "office_expenses" },
               { key: "deal_adjustments", path: "deal_adjustments" },
               { key: "alerts", path: "alerts" },
+              { key: "tenant_profiles", path: "tenant_profiles" },
+              { key: "leads", path: "crm_leads" }
             ];
 
             const loadPromises = collectionsToLoad.map(async (col) => {
               const colRef = collection(firestoreDb, "companies", companyId, col.path);
-              const snap = await getDocs(colRef);
-              const docsData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              // Dynamic SaaS query placeholder for complete Tenant Isolation filter
+              const q = query(colRef, where("tenant_id", "==", companyId));
+              const snap = await getDocs(q);
+              let docsData = snap.docs.map(doc => ({ id: doc.id, tenant_id: companyId, ...doc.data() }));
+              
+              // Fallback query if tenant_id is not indexed or empty on old rows
+              if (docsData.length === 0 && col.key !== "tenant_profiles") {
+                const fallbackSnap = await getDocs(colRef);
+                docsData = fallbackSnap.docs.map(doc => ({ id: doc.id, tenant_id: companyId, ...doc.data() }));
+              }
               return { key: col.key, data: docsData };
             });
 
@@ -161,10 +216,25 @@ export default function App() {
               (loadedDb as any)[res.key] = res.data;
             });
 
+            // If tenant profiles is missing in old database states, create a default one
+            if (!loadedDb.tenant_profiles || loadedDb.tenant_profiles.length === 0) {
+              const fallbackProfile = {
+                id: "tp-default",
+                tenant_id: companyId,
+                company_name: "BuildEstimate Inc.",
+                business_logo_url: "https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=150&auto=format&fit=crop",
+                gstin: "27AAACB1234C1Z0",
+                address: "4th Floor, Innovation Hub, Sector 62, Noida, UP - 201301",
+                phone_number: "+91 98765 43210"
+              };
+              loadedDb.tenant_profiles = [fallbackProfile];
+              await setDoc(doc(firestoreDb, "companies", companyId, "tenant_profiles", "tp-default"), sanitizeFirestoreData(fallbackProfile));
+            }
+
             // Automatically purge old pre-seeded projects and materials entries if detected
             const hasPreseededData = 
-              (loadedDb.projects && loadedDb.projects.length > 0) || 
-              (loadedDb.material_stocks && loadedDb.material_stocks.length > 0);
+              (loadedDb.projects && loadedDb.projects.length > 0 && loadedDb.projects[0].project_name.includes("Sector-85")) || 
+              (loadedDb.material_stocks && loadedDb.material_stocks.length > 0 && loadedDb.material_stocks[0].name.includes("Sand"));
 
             if (hasPreseededData) {
               addActivityLog("Syncing requests: Purging pre-seeded projects, quotations, and materials to a blank slate...");
@@ -180,7 +250,8 @@ export default function App() {
                 { key: "deal_adjustments", path: "deal_adjustments" },
                 { key: "buyer_requirements", path: "leads" },
                 { key: "vendors", path: "vendors" },
-                { key: "office_expenses", path: "office_expenses" }
+                { key: "office_expenses", path: "office_expenses" },
+                { key: "leads", path: "crm_leads" }
               ];
 
               for (const col of collectionsToClear) {
@@ -206,43 +277,49 @@ export default function App() {
             const seedPromises: Promise<void>[] = [];
             
             defaultData.profiles?.forEach(p => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "profiles", p.id), sanitizeFirestoreData(p)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "profiles", p.id), sanitizeFirestoreData({ ...p, tenant_id: companyId })));
             });
             defaultData.clients?.forEach(c => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "clients", c.id), sanitizeFirestoreData(c)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "clients", c.id), sanitizeFirestoreData({ ...c, tenant_id: companyId })));
             });
             defaultData.projects?.forEach(p => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "projects", p.id), sanitizeFirestoreData(p)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "projects", p.id), sanitizeFirestoreData({ ...p, tenant_id: companyId })));
             });
             defaultData.properties?.forEach(p => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "properties", p.id), sanitizeFirestoreData(p)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "properties", p.id), sanitizeFirestoreData({ ...p, tenant_id: companyId })));
             });
             defaultData.buyer_requirements?.forEach(br => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "leads", br.id), sanitizeFirestoreData(br)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "leads", br.id), sanitizeFirestoreData({ ...br, tenant_id: companyId })));
             });
             defaultData.daily_payments?.forEach(dp => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "daily_payments", dp.id), sanitizeFirestoreData(dp)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "daily_payments", dp.id), sanitizeFirestoreData({ ...dp, tenant_id: companyId })));
             });
             defaultData.inbound_revenues?.forEach(ir => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "inbound_revenues", ir.id), sanitizeFirestoreData(ir)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "inbound_revenues", ir.id), sanitizeFirestoreData({ ...ir, tenant_id: companyId })));
             });
             defaultData.vendors?.forEach(v => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "vendors", v.id), sanitizeFirestoreData(v)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "vendors", v.id), sanitizeFirestoreData({ ...v, tenant_id: companyId })));
             });
             defaultData.purchase_orders?.forEach(po => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "purchase_orders", po.id), sanitizeFirestoreData(po)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "purchase_orders", po.id), sanitizeFirestoreData({ ...po, tenant_id: companyId })));
             });
             defaultData.material_stocks?.forEach(ms => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "material_stocks", ms.id), sanitizeFirestoreData(ms)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "material_stocks", ms.id), sanitizeFirestoreData({ ...ms, tenant_id: companyId })));
             });
             defaultData.office_expenses?.forEach(oe => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "office_expenses", oe.id), sanitizeFirestoreData(oe)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "office_expenses", oe.id), sanitizeFirestoreData({ ...oe, tenant_id: companyId })));
             });
             defaultData.deal_adjustments?.forEach(da => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "deal_adjustments", da.id), sanitizeFirestoreData(da)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "deal_adjustments", da.id), sanitizeFirestoreData({ ...da, tenant_id: companyId })));
             });
             defaultData.alerts?.forEach(al => {
-              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "alerts", al.id), sanitizeFirestoreData(al)));
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "alerts", al.id), sanitizeFirestoreData({ ...al, tenant_id: companyId })));
+            });
+            defaultData.tenant_profiles?.forEach(tp => {
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "tenant_profiles", tp.id), sanitizeFirestoreData({ ...tp, tenant_id: companyId })));
+            });
+            defaultData.leads?.forEach(lead => {
+              seedPromises.push(setDoc(doc(firestoreDb, "companies", companyId, "crm_leads", lead.id), sanitizeFirestoreData({ ...lead, tenant_id: companyId })));
             });
 
             await Promise.all(seedPromises);
@@ -338,6 +415,133 @@ export default function App() {
     }
   };
 
+  // CRM & Lead Automation pipeline handlers
+  const handleAddLead = async (leadData: Omit<Lead, "id" | "created_at" | "tenant_id">) => {
+    if (!db) return;
+    const newLead: Lead = {
+      ...leadData,
+      id: "ld-" + ((db.leads || []).length + 1) + "-" + Math.floor(Math.random() * 1000),
+      tenant_id: user?.uid || "owner-1",
+      created_at: new Date().toISOString()
+    };
+    const updatedDb = {
+      ...db,
+      leads: [...(db.leads || []), newLead]
+    };
+    syncWithServer(updatedDb);
+    addActivityLog(`CRM: Added new prospect "${newLead.client_name}" successfully.`);
+
+    if (user) {
+      await saveDocument("crm_leads", newLead.id, newLead);
+    }
+  };
+
+  const handleUpdateLeadStatus = async (leadId: string, newStatus: 'New' | 'Quoted' | 'Follow-up') => {
+    if (!db) return;
+    const updatedLeads = (db.leads || []).map(l => 
+      l.id === leadId ? { ...l, status: newStatus } : l
+    );
+    const updatedDb = {
+      ...db,
+      leads: updatedLeads
+    };
+    syncWithServer(updatedDb);
+    addActivityLog(`CRM: Updated lead status to "${newStatus}".`);
+
+    if (user) {
+      const activeLead = updatedLeads.find(l => l.id === leadId);
+      if (activeLead) {
+        await saveDocument("crm_leads", leadId, activeLead);
+      }
+    }
+  };
+
+  const handleConvertLeadToEstimate = async (lead: Lead) => {
+    if (!db) return;
+
+    addActivityLog(`CRM: Initiating estimate conversion for lead "${lead.client_name}"...`);
+
+    // 1. Create a new Client
+    const newClientId = "cl-" + (db.clients.length + 1) + "-" + Math.floor(Math.random() * 1000);
+    const newClient: Client = {
+      id: newClientId,
+      name: lead.client_name,
+      phone: lead.phone_number,
+      tags: ["Buyer"],
+      project_location: lead.location,
+      tenant_id: user?.uid || "owner-1"
+    };
+
+    // 2. Create a blank clean Project estimate (status: 'Quotation')
+    const newProjectId = "pr-" + (db.projects.length + 1) + "-" + Math.floor(Math.random() * 1000);
+    const newProject: Project = {
+      id: newProjectId,
+      project_name: `Estimate for ${lead.client_name}`,
+      status: "Quotation",
+      client_id: newClientId,
+      location: lead.location,
+      type: "Residential",
+      completion_pct: 0,
+      total_budget: 0,
+      spent: 0,
+      tenant_id: user?.uid || "owner-1",
+      estimates: {
+        civil: [],
+        electrical: [],
+        finishes: [],
+        interior_finishing: []
+      },
+      gst_rate: 18
+    };
+
+    // 3. Update the lead status to 'Quoted'
+    const updatedLeads = (db.leads || []).map(l => 
+      l.id === lead.id ? { ...l, status: "Quoted" as const } : l
+    );
+
+    const updatedDb: DatabaseState = {
+      ...db,
+      clients: [...db.clients, newClient],
+      projects: [...db.projects, newProject],
+      leads: updatedLeads
+    };
+
+    syncWithServer(updatedDb);
+
+    if (user) {
+      await saveDocument("clients", newClient.id, newClient);
+      await saveDocument("projects", newProject.id, newProject);
+      await saveDocument("crm_leads", lead.id, { ...lead, status: "Quoted" });
+    }
+
+    addActivityLog(`CRM: Lead converted. Client profile and blank Estimate created successfully.`);
+
+    // 4. Set state to select this new project in the Estimates tab
+    setSelectedProjectIdForEstimates(newProjectId);
+
+    // 5. Navigate directly to Estimates tab
+    setCurrentTab("estimates");
+  };
+
+  // Handler for adding a new client
+  const handleAddClient = async (clientData: Omit<Client, "id">) => {
+    if (!db) return;
+    const newClient: Client = {
+      ...clientData,
+      id: "cl-" + ((db.clients || []).length + 1) + "-" + Math.floor(Math.random() * 1000)
+    };
+    const updatedDb = {
+      ...db,
+      clients: [...(db.clients || []), newClient]
+    };
+    syncWithServer(updatedDb);
+    addActivityLog(`Added new client "${newClient.name}" successfully.`);
+
+    if (user) {
+      await saveDocument("clients", newClient.id, newClient);
+    }
+  };
+
   // Handler for adding a new construction project
   const handleAddProject = async (project: Omit<Project, "id">) => {
     if (!db) return;
@@ -364,59 +568,12 @@ export default function App() {
     // Automatically initialize estimates if they are missing
     let projectToSave = { ...updatedProject };
     if (!projectToSave.estimates) {
-      if (projectToSave.id === "pr-1") {
-        projectToSave.estimates = {
-          civil: [
-            { name: "Foundations & Plinth", quantity: 1, unit: "ls", rate: 1850000, amount: 1850000 },
-            { name: "Structure Masonry", quantity: 1, unit: "ls", rate: 2200000, amount: 2200000 }
-          ],
-          electrical: [
-            { name: "Conduit Pipes Fitting", quantity: 1, unit: "ls", rate: 250000, amount: 250000 },
-            { name: "Modular Switches", quantity: 1, unit: "ls", rate: 150000, amount: 150000 }
-          ],
-          finishes: [
-            { name: "External Plaster Paint", quantity: 1, unit: "ls", rate: 650000, amount: 650000 },
-            { name: "Vitrified Flooring", quantity: 1, unit: "ls", rate: 1100000, amount: 1100000 }
-          ]
-        };
-      } else if (projectToSave.id === "pr-2") {
-        projectToSave.estimates = {
-          civil: [
-            { name: "Basement Excavation", quantity: 1, unit: "ls", rate: 4500000, amount: 4500000 },
-            { name: "Superstructure Columns", quantity: 1, unit: "ls", rate: 8200000, amount: 8200000 }
-          ],
-          electrical: [
-            { name: "HT Substation Transformer", quantity: 1, unit: "ls", rate: 3500000, amount: 3500000 },
-            { name: "Wiring & Conduit Work", quantity: 1, unit: "ls", rate: 1500000, amount: 1500000 }
-          ],
-          finishes: [
-            { name: "Glass Curtain Wall Finishes", quantity: 1, unit: "ls", rate: 4200000, amount: 4200000 },
-            { name: "Granite Lobby Tiling", quantity: 1, unit: "ls", rate: 1800000, amount: 1800000 }
-          ]
-        };
-      } else if (projectToSave.id === "pr-3") {
-        projectToSave.estimates = {
-          civil: [
-            { name: "Reinforcement Steel", quantity: 1, unit: "ls", rate: 1240000, amount: 1240000 },
-            { name: "RMC (M25 Grade)", quantity: 1, unit: "ls", rate: 1815000, amount: 1815000 }
-          ],
-          electrical: [
-            { name: "Internal Wiring Copper", quantity: 1, unit: "ls", rate: 450000, amount: 450000 },
-            { name: "Distribution Board Panels", quantity: 1, unit: "ls", rate: 575000, amount: 575000 }
-          ],
-          finishes: [
-            { name: "Italian Marble Premium", quantity: 1, unit: "ls", rate: 1350000, amount: 1350000 },
-            { name: "Premium Emulsion Paints", quantity: 1, unit: "ls", rate: 1041700, amount: 1041700 }
-          ]
-        };
-      } else {
-        // Default blank estimates for newly created projects
-        projectToSave.estimates = {
-          civil: [],
-          electrical: [],
-          finishes: []
-        };
-      }
+      projectToSave.estimates = {
+        civil: [],
+        electrical: [],
+        finishes: [],
+        interior_finishing: []
+      };
     }
 
     const updatedProjects = db.projects.map((p) => p.id === projectToSave.id ? projectToSave : p);
@@ -617,6 +774,7 @@ export default function App() {
       purchase_orders: [],
       alerts: [],
       buyer_requirements: [],
+      tenant_profiles: db.tenant_profiles ? db.tenant_profiles.map(tp => ({ ...tp })) : []
     };
 
     if (user) {
@@ -672,6 +830,53 @@ export default function App() {
     }
   };
 
+  // Public Client Snapshot Portal View Routing
+  const urlParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const isSharedMode = urlParams.has("share");
+
+  if (isSharedMode) {
+    if (sharedLoading) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+          <span className="material-symbols-outlined text-slate-400 text-5xl animate-spin mb-4 animate-pulse">
+            progress_activity
+          </span>
+          <h2 className="text-sm font-black uppercase text-slate-500 tracking-widest">
+            Loading Client Estimate Snapshot...
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">Fetching official proposal snapshot from secure cloud storage</p>
+        </div>
+      );
+    }
+
+    if (sharedError) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto">
+          <span className="material-symbols-outlined text-rose-500 text-5xl mb-4">
+            gpp_bad
+          </span>
+          <h2 className="text-sm font-black uppercase text-slate-700 tracking-widest">
+            Access Denied or Link Invalid
+          </h2>
+          <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+            {sharedError}
+          </p>
+          <a
+            href={window.location.origin + window.location.pathname}
+            className="mt-6 inline-flex items-center gap-1.5 bg-slate-900 hover:bg-black text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all shadow-xs uppercase tracking-wider"
+          >
+            <span className="material-symbols-outlined text-xs">home</span>
+            Go to Builder Portal
+          </a>
+        </div>
+      );
+    }
+
+    if (sharedEstimate) {
+      return <ClientEstimatePortal estimate={sharedEstimate} />;
+    }
+  }
+
   if (loading || !db) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
@@ -685,6 +890,18 @@ export default function App() {
       </div>
     );
   }
+
+  const activeTenantProfile = db.tenant_profiles?.find(
+    (tp) => tp.tenant_id === (user?.uid || "owner-1")
+  ) || db.tenant_profiles?.[0] || {
+    id: "tp-fallback",
+    tenant_id: "owner-1",
+    company_name: "BuildEstimate Inc.",
+    business_logo_url: "https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=150&auto=format&fit=crop",
+    gstin: "27AAACB1234C1Z0",
+    address: "4th Floor, Innovation Hub, Sector 62, Noida, UP - 201301",
+    phone_number: "+91 98765 43210"
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-slate-900 selection:text-white">
@@ -708,6 +925,7 @@ export default function App() {
           {currentTab === "dashboard" && (
             <DashboardView
               projects={db.projects}
+              clients={db.clients || []}
               alerts={db.alerts}
               profiles={db.profiles}
               inboundRevenues={db.inbound_revenues || []}
@@ -727,6 +945,9 @@ export default function App() {
               onAddDailyPayment={handleAddPayment}
               onAddOfficeExpense={handleAddOfficeExpense}
               onAddDealAdjustment={handleAddDealAdjustment}
+              onAddClient={handleAddClient}
+              tenantProfile={activeTenantProfile}
+              onOpenUpgradeModal={() => setIsSubscriptionModalOpen(true)}
             />
           )}
 
@@ -734,8 +955,12 @@ export default function App() {
             <EstimatesView 
               projects={db.projects} 
               clients={db.clients || []}
+              vendors={db.vendors || []}
               onAddLog={addActivityLog} 
               onUpdateProject={handleUpdateProject} 
+              onAddClient={handleAddClient}
+              tenantProfile={activeTenantProfile}
+              initialProjectId={selectedProjectIdForEstimates}
             />
           )}
 
@@ -780,12 +1005,28 @@ export default function App() {
             />
           )}
 
+          {currentTab === "leads" && (
+            <LeadsView
+              leads={db.leads || []}
+              clients={db.clients || []}
+              projects={db.projects || []}
+              tenantProfile={activeTenantProfile}
+              activeRole={activeRole}
+              onAddLead={handleAddLead}
+              onUpdateLeadStatus={handleUpdateLeadStatus}
+              onConvertLeadToEstimate={handleConvertLeadToEstimate}
+              onOpenUpgradeModal={() => setIsSubscriptionModalOpen(true)}
+            />
+          )}
+
           {currentTab === "settings" && (
             <SettingsView
               userRole={activeRole}
               user={user}
               onAddLog={addActivityLog}
               onResetDatabase={handleResetDatabase}
+              tenantProfile={activeTenantProfile}
+              onOpenUpgradeModal={() => setIsSubscriptionModalOpen(true)}
             />
           )}
         </div>
@@ -809,6 +1050,40 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      <SubscriptionGate
+        isOpen={isSubscriptionModalOpen}
+        onClose={() => setIsSubscriptionModalOpen(false)}
+        tenantProfile={activeTenantProfile}
+        activeProjectsCount={db ? db.projects.length : 0}
+        onAddLog={addActivityLog}
+        onUpgradePlan={async (newPlan) => {
+          const updatedProfile = {
+            ...activeTenantProfile,
+            subscription_plan: newPlan
+          };
+          
+          if (user) {
+            await setDoc(
+              doc(firestoreDb, "companies", user.uid, "tenant_profiles", activeTenantProfile.id || "tp-default"),
+              sanitizeFirestoreData(updatedProfile)
+            );
+          }
+          
+          setDb(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              tenant_profiles: (prev.tenant_profiles || []).map(tp => 
+                tp.id === activeTenantProfile.id ? updatedProfile : tp
+              )
+            };
+          });
+          
+          addActivityLog(`Billing: Successfully upgraded subscription to "${newPlan}" tier!`);
+          setIsSubscriptionModalOpen(false);
+        }}
+      />
     </div>
   );
 }

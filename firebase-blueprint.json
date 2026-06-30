@@ -1,5 +1,21 @@
 {
   "entities": {
+    "TenantProfile": {
+      "title": "TenantProfile",
+      "description": "Premium multi-tenant SaaS business profile holding dynamic branding parameters",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenant_id": { "type": "string" },
+        "company_name": { "type": "string" },
+        "business_logo_url": { "type": "string" },
+        "gstin": { "type": "string" },
+        "address": { "type": "string" },
+        "phone_number": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["id", "tenant_id", "company_name", "business_logo_url", "gstin", "address", "phone_number"]
+    },
     "Profile": {
       "title": "Profile",
       "description": "User profile with role-based attributes under a master subscription",
@@ -10,7 +26,8 @@
         "user_role": { "type": "string", "enum": ["Owner", "Manager", "Supervisor", "Telecaller"] },
         "account_status": { "type": "string", "enum": ["Active", "Disabled"] },
         "avatar_url": { "type": "string" },
-        "parent_owner_id": { "type": "string" }
+        "parent_owner_id": { "type": "string" },
+        "tenant_id": { "type": "string" }
       },
       "required": ["id", "name", "user_role", "account_status"]
     },
@@ -25,7 +42,8 @@
         "tags": {
           "type": "array",
           "items": { "type": "string", "enum": ["Buyer", "Seller", "Vendor", "Contractor"] }
-        }
+        },
+        "tenant_id": { "type": "string" }
       },
       "required": ["id", "name", "phone", "tags"]
     },
@@ -42,7 +60,8 @@
         "completion_pct": { "type": "number" },
         "total_budget": { "type": "number" },
         "spent": { "type": "number" },
-        "gst_rate": { "type": "number" }
+        "gst_rate": { "type": "number" },
+        "tenant_id": { "type": "string" }
       },
       "required": ["id", "project_name", "status", "location", "type", "completion_pct", "total_budget", "spent"]
     },
@@ -60,7 +79,8 @@
         "source_person_name": { "type": "string" },
         "source_person_type": { "type": "string", "enum": ["Builder", "Owner", "CP", "Rental Investor"] },
         "image_url": { "type": "string" },
-        "status": { "type": "string", "enum": ["Available", "Hold", "Sold"] }
+        "status": { "type": "string", "enum": ["Available", "Hold", "Sold"] },
+        "tenant_id": { "type": "string" }
       },
       "required": ["id", "title", "property_type", "location", "asking_price", "target_selling_price", "source_person_name", "source_person_type", "status"]
     },
@@ -76,7 +96,8 @@
         "payment_mode": { "type": "string", "enum": ["Cash", "Online"] },
         "payment_stage": { "type": "string", "enum": ["Advance", "Partial", "Final"] },
         "date": { "type": "string" },
-        "registry_deadline": { "type": "string" }
+        "registry_deadline": { "type": "string" },
+        "tenant_id": { "type": "string" }
       },
       "required": ["id", "project_id", "amount", "head_account", "payment_mode", "payment_stage", "date"]
     },
@@ -91,7 +112,8 @@
         "paid_by": { "type": "string" },
         "remarks": { "type": "string" },
         "category": { "type": "string", "enum": ["Labor", "Materials", "Miscellaneous"] },
-        "date": { "type": "string" }
+        "date": { "type": "string" },
+        "tenant_id": { "type": "string" }
       },
       "required": ["id", "project_id", "amount", "paid_by", "remarks", "category", "date"]
     },
@@ -103,7 +125,8 @@
         "id": { "type": "string" },
         "subject": { "type": "string" },
         "amount": { "type": "number" },
-        "date": { "type": "string" }
+        "date": { "type": "string" },
+        "tenant_id": { "type": "string" }
       },
       "required": ["id", "subject", "amount", "date"]
     },
@@ -116,7 +139,8 @@
         "client_id": { "type": "string" },
         "direction": { "type": "string", "enum": ["Inbound_Commission", "Outbound_Payout"] },
         "amount": { "type": "number" },
-        "deal_detail": { "type": "string" }
+        "deal_detail": { "type": "string" },
+        "tenant_id": { "type": "string" }
       },
       "required": ["id", "client_id", "direction", "amount", "deal_detail"]
     },
@@ -222,15 +246,43 @@
         "vendors": { "type": "array", "items": { "$ref": "Vendor" } },
         "purchase_orders": { "type": "array", "items": { "$ref": "PurchaseOrder" } },
         "alerts": { "type": "array", "items": { "$ref": "CriticalAlert" } },
-        "buyer_requirements": { "type": "array", "items": { "$ref": "BuyerRequirement" } }
+        "buyer_requirements": { "type": "array", "items": { "$ref": "BuyerRequirement" } },
+        "tenant_profiles": { "type": "array", "items": { "$ref": "TenantProfile" } }
       },
-      "required": ["profiles", "clients", "projects", "properties", "inbound_revenues", "daily_payments", "office_expenses", "deal_adjustments", "material_stocks", "vendors", "purchase_orders", "alerts", "buyer_requirements"]
+      "required": ["profiles", "clients", "projects", "properties", "inbound_revenues", "daily_payments", "office_expenses", "deal_adjustments", "material_stocks", "vendors", "purchase_orders", "alerts", "buyer_requirements", "tenant_profiles"]
+    },
+    "EstimateSnapshot": {
+      "title": "EstimateSnapshot",
+      "description": "Public read-only snapshot of an estimate for sharing with clients",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "project_name": { "type": "string" },
+        "company_name": { "type": "string" },
+        "business_logo_url": { "type": "string" },
+        "gstin": { "type": "string" },
+        "address": { "type": "string" },
+        "phone_number": { "type": "string" },
+        "email": { "type": "string" },
+        "civil_items": { "type": "array" },
+        "electrical_items": { "type": "array" },
+        "finishes_items": { "type": "array" },
+        "interior_finishing_items": { "type": "array" },
+        "gst_rate": { "type": "number" },
+        "grand_total": { "type": "number" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "project_name", "company_name", "civil_items", "electrical_items", "finishes_items", "interior_finishing_items", "gst_rate", "grand_total", "created_at"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "DatabaseState",
       "description": "Per-user secure database storage containing profiles, active construction trackers, deal catalogs, and micro-ledgers"
+    },
+    "/public_estimates/{shareId}": {
+      "schema": "EstimateSnapshot",
+      "description": "Read-only snapshot of a project's cost estimate published for external clients"
     }
   }
 }

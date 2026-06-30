@@ -1,14 +1,27 @@
 import React, { useState } from "react";
-import { Project, LineItem, Client } from "../types";
+import { Project, LineItem, Client, Vendor, TenantProfile } from "../types";
+import { db as firestoreDb } from "../lib/firebase";
+import { doc, collection, setDoc } from "firebase/firestore";
 
 interface EstimatesViewProps {
   projects: Project[];
   clients?: Client[];
+  vendors?: Vendor[];
   onAddLog: (log: string) => void;
   onUpdateProject?: (project: Project) => void;
+  onAddClient?: (client: Omit<Client, "id">) => void;
+  tenantProfile?: TenantProfile; // Dynamic SaaS brand parameters
+  initialProjectId?: string;
 }
 
-export default function EstimatesView({ projects, clients = [], onAddLog, onUpdateProject }: EstimatesViewProps) {
+export default function EstimatesView({ projects, clients = [], vendors = [], onAddLog, onUpdateProject, onAddClient, tenantProfile, initialProjectId }: EstimatesViewProps) {
+  const companyName = tenantProfile?.company_name || "BuildEstimate Inc.";
+  const businessLogo = tenantProfile?.business_logo_url || "";
+  const companyGstin = tenantProfile?.gstin || "";
+  const companyAddress = tenantProfile?.address || "";
+  const companyPhone = tenantProfile?.phone_number || "";
+  const companyEmail = tenantProfile?.email || "";
+
   const [confirmAction, setConfirmAction] = useState<{
     message: string;
     onConfirm: () => void;
@@ -19,12 +32,19 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
     civil: true,
     electrical: false,
     finishes: true,
+    interior_finishing: true,
   });
 
   // Track selected project ID
   const [selectedProjectId, setSelectedProjectId] = useState<string>(
-    projects.length > 0 ? projects[0].id : ""
+    initialProjectId || (projects.length > 0 ? projects[0].id : "")
   );
+
+  React.useEffect(() => {
+    if (initialProjectId) {
+      setSelectedProjectId(initialProjectId);
+    }
+  }, [initialProjectId]);
 
   // Ensure selectedProjectId is kept in sync if projects list changes
   const activeProjId = selectedProjectId || (projects.length > 0 ? projects[0].id : "");
@@ -32,15 +52,20 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
 
   // Helper to dynamically get estimates
   const getProjectEstimates = (proj: Project | undefined) => {
-    if (!proj) return { civil: [], electrical: [], finishes: [] };
-    if (proj.estimates) return proj.estimates;
-    return { civil: [], electrical: [], finishes: [] };
+    if (!proj) return { civil: [], electrical: [], finishes: [], interior_finishing: [] };
+    return {
+      civil: proj.estimates?.civil || [],
+      electrical: proj.estimates?.electrical || [],
+      finishes: proj.estimates?.finishes || [],
+      interior_finishing: proj.estimates?.interior_finishing || []
+    };
   };
 
   const currentEstimates = getProjectEstimates(selectedProject);
   const civilItems = currentEstimates.civil;
   const electricalItems = currentEstimates.electrical;
   const finishesItems = currentEstimates.finishes;
+  const interiorFinishingItems = currentEstimates.interior_finishing;
 
   const toggleCategory = (cat: string) => {
     setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
@@ -50,18 +75,100 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
   const [quoteCopied, setQuoteCopied] = useState(false);
-  const [targetCategory, setTargetCategory] = useState<"civil" | "electrical" | "finishes" | null>(null);
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [generatedShareId, setGeneratedShareId] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [targetCategory, setTargetCategory] = useState<"civil" | "electrical" | "finishes" | "interior_finishing" | null>(null);
   const [newItemName, setNewItemName] = useState("");
   const [newItemAmount, setNewItemAmount] = useState("");
   const [newItemQuantity, setNewItemQuantity] = useState<string>("1");
   const [newItemUnit, setNewItemUnit] = useState<string>("sqft");
   const [newItemRate, setNewItemRate] = useState<string>("0");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editingCategory, setEditingCategory] = useState<"civil" | "electrical" | "finishes" | null>(null);
+  const [editingCategory, setEditingCategory] = useState<"civil" | "electrical" | "finishes" | "interior_finishing" | null>(null);
 
   // State for Assign Client Modal
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedClientIdForAssignment, setSelectedClientIdForAssignment] = useState<string>("");
+
+  // State for Add New Client Modal
+  const [isAddClientOpen, setIsAddClientOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
+  const [newClientLocation, setNewClientLocation] = useState("");
+
+  const handleCreateClient = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClientName.trim() || !newClientPhone.trim()) return;
+
+    if (onAddClient) {
+      onAddClient({
+        name: newClientName.trim(),
+        phone: newClientPhone.trim(),
+        tags: ["Buyer"],
+        project_location: newClientLocation.trim() || undefined
+      });
+    }
+
+    // Reset and close
+    setNewClientName("");
+    setNewClientPhone("");
+    setNewClientLocation("");
+    setIsAddClientOpen(false);
+  };
+
+  // State for Assign Vendor Modal
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [vendorCategory, setVendorCategory] = useState<"civil" | "electrical" | "finishes" | "interior_finishing" | null>(null);
+  const [typedVendorName, setTypedVendorName] = useState("");
+
+  const handleOpenAssignVendor = (category: "civil" | "electrical" | "finishes" | "interior_finishing") => {
+    setVendorCategory(category);
+    let currentName = "";
+    if (category === "civil") currentName = selectedProject?.estimates?.civil_vendor_name || "";
+    else if (category === "electrical") currentName = selectedProject?.estimates?.electrical_vendor_name || "";
+    else if (category === "finishes") currentName = selectedProject?.estimates?.finishes_vendor_name || "";
+    else if (category === "interior_finishing") currentName = selectedProject?.estimates?.interior_vendor_name || "";
+    
+    setTypedVendorName(currentName);
+    setIsVendorModalOpen(true);
+  };
+
+  const handleSaveVendor = (vendorName: string) => {
+    if (!selectedProject || !onUpdateProject || !vendorCategory) return;
+    
+    const updatedEstimates = {
+      civil: civilItems,
+      electrical: electricalItems,
+      finishes: finishesItems,
+      interior_finishing: interiorFinishingItems,
+      ...selectedProject.estimates,
+    };
+
+    if (vendorCategory === "civil") {
+      updatedEstimates.civil_vendor_name = vendorName || undefined;
+    } else if (vendorCategory === "electrical") {
+      updatedEstimates.electrical_vendor_name = vendorName || undefined;
+    } else if (vendorCategory === "finishes") {
+      updatedEstimates.finishes_vendor_name = vendorName || undefined;
+    } else if (vendorCategory === "interior_finishing") {
+      updatedEstimates.interior_vendor_name = vendorName || undefined;
+    }
+
+    onUpdateProject({
+      ...selectedProject,
+      estimates: updatedEstimates
+    });
+
+    if (vendorName) {
+      onAddLog(`Assigned vendor "${vendorName}" to category "${vendorCategory}" on project "${selectedProject.project_name}".`);
+    } else {
+      onAddLog(`Removed vendor assignment from category "${vendorCategory}" on project "${selectedProject.project_name}".`);
+    }
+
+    setIsVendorModalOpen(false);
+    setVendorCategory(null);
+  };
 
   const linkedClient = selectedProject?.client_id
     ? clients.find(c => c.id === selectedProject.client_id)
@@ -72,7 +179,7 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
     setIsAssignModalOpen(true);
   };
 
-  const handleOpenAddModal = (cat: "civil" | "electrical" | "finishes") => {
+  const handleOpenAddModal = (cat: "civil" | "electrical" | "finishes" | "interior_finishing") => {
     setTargetCategory(cat);
     setEditingIndex(null);
     setEditingCategory(null);
@@ -84,7 +191,7 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
     setIsModalOpen(true);
   };
 
-  const handleOpenEditModal = (cat: "civil" | "electrical" | "finishes", index: number, item: LineItem) => {
+  const handleOpenEditModal = (cat: "civil" | "electrical" | "finishes" | "interior_finishing", index: number, item: LineItem) => {
     setTargetCategory(cat);
     setEditingIndex(index);
     setEditingCategory(cat);
@@ -96,12 +203,13 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
     setIsModalOpen(true);
   };
 
-  const handleDeleteLineItem = (category: "civil" | "electrical" | "finishes", index: number) => {
+  const handleDeleteLineItem = (category: "civil" | "electrical" | "finishes" | "interior_finishing", index: number) => {
     if (!selectedProject || !onUpdateProject) return;
     let itemName = "";
     let nextCivil = [...civilItems];
     let nextElec = [...electricalItems];
     let nextFin = [...finishesItems];
+    let nextInterior = [...interiorFinishingItems];
 
     if (category === "civil") {
       itemName = civilItems[index]?.name || "";
@@ -112,19 +220,25 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
     } else if (category === "finishes") {
       itemName = finishesItems[index]?.name || "";
       nextFin = nextFin.filter((_, idx) => idx !== index);
+    } else if (category === "interior_finishing") {
+      itemName = interiorFinishingItems[index]?.name || "";
+      nextInterior = nextInterior.filter((_, idx) => idx !== index);
     }
 
     const nextGrandTotal = nextCivil.reduce((sum, item) => sum + item.amount, 0) +
                            nextElec.reduce((sum, item) => sum + item.amount, 0) +
-                           nextFin.reduce((sum, item) => sum + item.amount, 0);
+                           nextFin.reduce((sum, item) => sum + item.amount, 0) +
+                           nextInterior.reduce((sum, item) => sum + item.amount, 0);
 
     onUpdateProject({
       ...selectedProject,
       total_budget: nextGrandTotal,
       estimates: {
+        ...selectedProject.estimates,
         civil: nextCivil,
         electrical: nextElec,
         finishes: nextFin,
+        interior_finishing: nextInterior,
       }
     });
 
@@ -142,6 +256,7 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
     let nextCivil = [...civilItems];
     let nextElec = [...electricalItems];
     let nextFin = [...finishesItems];
+    let nextInterior = [...interiorFinishingItems];
 
     const newItem: LineItem = {
       name: newItemName,
@@ -159,6 +274,8 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
         nextElec = nextElec.map((item, idx) => idx === editingIndex ? newItem : item);
       } else if (editingCategory === "finishes") {
         nextFin = nextFin.map((item, idx) => idx === editingIndex ? newItem : item);
+      } else if (editingCategory === "interior_finishing") {
+        nextInterior = nextInterior.map((item, idx) => idx === editingIndex ? newItem : item);
       }
       onAddLog(`Updated estimate line item to "${newItemName}" (${qty} ${newItemUnit} @ ₹${rate}/unit) under ${editingCategory} for ₹${amountNum.toLocaleString()}`);
     } else if (targetCategory) {
@@ -169,21 +286,26 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
         nextElec.push(newItem);
       } else if (targetCategory === "finishes") {
         nextFin.push(newItem);
+      } else if (targetCategory === "interior_finishing") {
+        nextInterior.push(newItem);
       }
       onAddLog(`Added estimate line item "${newItemName}" (${qty} ${newItemUnit} @ ₹${rate}/unit) under ${targetCategory} for ₹${amountNum.toLocaleString()}`);
     }
 
     const nextGrandTotal = nextCivil.reduce((sum, item) => sum + item.amount, 0) +
                            nextElec.reduce((sum, item) => sum + item.amount, 0) +
-                           nextFin.reduce((sum, item) => sum + item.amount, 0);
+                           nextFin.reduce((sum, item) => sum + item.amount, 0) +
+                           nextInterior.reduce((sum, item) => sum + item.amount, 0);
 
     onUpdateProject({
       ...selectedProject,
       total_budget: nextGrandTotal,
       estimates: {
+        ...selectedProject.estimates,
         civil: nextCivil,
         electrical: nextElec,
         finishes: nextFin,
+        interior_finishing: nextInterior,
       }
     });
 
@@ -203,8 +325,16 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
   const totalCivil = civilItems.reduce((sum, item) => sum + item.amount, 0);
   const totalElectrical = electricalItems.reduce((sum, item) => sum + item.amount, 0);
   const totalFinishes = finishesItems.reduce((sum, item) => sum + item.amount, 0);
+  const totalInteriorFinishing = interiorFinishingItems.reduce((sum, item) => sum + item.amount, 0);
 
-  const grandTotal = totalCivil + totalElectrical + totalFinishes;
+  const grandTotal = totalCivil + totalElectrical + totalFinishes + totalInteriorFinishing;
+
+  // Safe percentage helper to avoid division by zero or NaN issues
+  const getPercentage = (categoryTotal: number): string | number => {
+    const percentage = grandTotal > 0 ? ((categoryTotal / grandTotal) * 100).toFixed(0) : 0;
+    return percentage;
+  };
+
   const targetBudget = selectedProject ? selectedProject.total_budget : 8542000;
   
   // GST calculation
@@ -220,9 +350,163 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
     });
   };
 
+  const handleWhatsAppShare = () => {
+    // 1. WhatsApp Number (Client phone numbers from database)
+    let clientPhone = "919876543210"; // Country code ke sath without '+'
+    if (linkedClient && linkedClient.phone) {
+      const digits = linkedClient.phone.replace(/\D/g, "");
+      if (digits.length === 10) {
+        clientPhone = "91" + digits;
+      } else if (digits.length > 10) {
+        clientPhone = digits;
+      } else {
+        clientPhone = digits || "919876543210";
+      }
+    }
+    
+    const projName = selectedProject?.project_name || "MS Sahni Sector-85";
+
+    // 2. Custom Message Body with your Premium Branding
+    const messageText = `*${companyName} | Powered by Karam AI | Innovation HUB*\n\n` +
+      `Hello Sir, please find the finalized summary of your estimate:\n\n` +
+      `📍 *Project:* ${projName}\n` +
+      `💰 *Grand Total:* ₹${totalWithGst.toLocaleString('en-IN')}\n\n` +
+      `Click the link in your app dashboard to view the itemized breakdown. Let's start building! 🚀`;
+
+    // 3. URL Encoding to handle spaces and formatting characters safely
+    const encodedMessage = encodeURIComponent(messageText);
+    
+    // 4. Trigger system window to open WhatsApp Web or Desktop App
+    window.open(`https://wa.me/${clientPhone}?text=${encodedMessage}`, '_blank');
+    onAddLog(`Shared quotation summary for "${projName}" via WhatsApp to +${clientPhone}.`);
+  };
+
+  const handleWhatsAppText = () => {
+    let clientPhone = "919876543210";
+    if (linkedClient && linkedClient.phone) {
+      const digits = linkedClient.phone.replace(/\D/g, "");
+      if (digits.length === 10) {
+        clientPhone = "91" + digits;
+      } else if (digits.length > 10) {
+        clientPhone = digits;
+      } else {
+        clientPhone = digits || "919876543210";
+      }
+    }
+    
+    const projName = selectedProject?.project_name || "Sector-85 Plot Construction";
+    const clientName = linkedClient ? linkedClient.name : "Mr. M.S. Sahni";
+
+    const messageText = 
+      `*BuildEstimate BOS* 🏢\n` +
+      `_Innovation HUB | Powered by Karam AI_\n\n` +
+      `Hello ${clientName},\n\n` +
+      `Please find attached the clean itemized estimation summary for your upcoming project.\n\n` +
+      `📍 *Project:* ${projName}\n` +
+      `💰 *Estimated Grand Total:* ₹${totalWithGst.toLocaleString('en-IN')}\n\n` +
+      `_Kindly review the attached PDF file below._ 👇\n\n` +
+      `Best regards,\n` +
+      `*${companyName}*`;
+
+    const encodedMessage = encodeURIComponent(messageText);
+    window.open(`https://wa.me/${clientPhone}?text=${encodedMessage}`, '_blank');
+    onAddLog(`Opened WhatsApp share thread with premium template message for client "${clientName}".`);
+  };
+
+  const handleDualActionWhatsApp = () => {
+    let phone = "919876543210";
+    if (tenantProfile?.phone_number) {
+      phone = tenantProfile.phone_number.replace(/\D/g, "");
+    } else if (linkedClient && linkedClient.phone) {
+      const digits = linkedClient.phone.replace(/\D/g, "");
+      if (digits.length === 10) {
+        phone = "91" + digits;
+      } else if (digits.length > 10) {
+        phone = digits;
+      }
+    }
+    const projName = selectedProject?.project_name || "Active Project Site";
+    const grandTotalVal = totalWithGst;
+
+    const boldedMsg = `*${companyName}*\n\n` +
+      `📍 *Project:* *${projName}*\n` +
+      `💰 *Grand Total:* *₹${grandTotalVal.toLocaleString('en-IN')}*\n\n` +
+      `Here is the finalized commercial estimate for your project. Please review and let us know your thoughts. Let's start building! 🚀`;
+
+    const encodedText = encodeURIComponent(boldedMsg);
+    window.open(`https://wa.me/${phone}?text=${encodedText}`, "_blank");
+    onAddLog(`Opened secure WhatsApp thread with phone +${phone} for project "${projName}".`);
+  };
+
+  const handleGeneratePublicLink = async () => {
+    if (!selectedProject) return;
+    setIsGeneratingLink(true);
+    setLinkCopied(false);
+    try {
+      const snapshotId = `ps-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const snapshotRef = doc(firestoreDb, "public_estimates", snapshotId);
+      
+      const snapshotData = {
+        id: snapshotId,
+        project_name: selectedProject.project_name || "Active Project Site",
+        company_name: companyName,
+        business_logo_url: businessLogo || "",
+        gstin: companyGstin || "",
+        address: companyAddress || "",
+        phone_number: companyPhone || "",
+        email: companyEmail || "",
+        civil_items: civilItems || [],
+        electrical_items: electricalItems || [],
+        finishes_items: finishesItems || [],
+        interior_finishing_items: interiorFinishingItems || [],
+        gst_rate: gstPercent,
+        grand_total: totalWithGst,
+        subscription_plan: tenantProfile?.subscription_plan || "Free Trial",
+        created_at: new Date().toISOString()
+      };
+      
+      await setDoc(snapshotRef, snapshotData);
+      setGeneratedShareId(snapshotId);
+      onAddLog(`Created a read-only estimate snapshot public_estimates/${snapshotId} for project "${selectedProject.project_name}".`);
+    } catch (err: any) {
+      console.error("Error creating shared estimate:", err);
+      onAddLog(`Failed to generate public shared link: ${err.message || err}`);
+    } finally {
+      setIsGeneratingLink(false);
+    }
+  };
+
+  const handleCopyGeneratedLink = () => {
+    if (!generatedShareId) return;
+    const publicLink = `${window.location.origin}${window.location.pathname}?share=${generatedShareId}`;
+    navigator.clipboard.writeText(publicLink).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 3000);
+      onAddLog(`Copied public estimate shareable link to clipboard: ${publicLink}`);
+    });
+  };
+
   const handleDownloadQuote = () => {
     const projName = selectedProject?.project_name || "Active Project Site";
     const clientName = linkedClient ? linkedClient.name : "Client Not Assigned";
+    
+    let clientPhone = "919876543210";
+    if (linkedClient && linkedClient.phone) {
+      const digits = linkedClient.phone.replace(/\D/g, "");
+      if (digits.length === 10) {
+        clientPhone = "91" + digits;
+      } else if (digits.length > 10) {
+        clientPhone = digits;
+      }
+    }
+    const messageText = `*${companyName} | Powered by Karam AI | Innovation HUB*\n\n` +
+      `Hello Sir, please find the finalized summary of your estimate:\n\n` +
+      `📍 *Project:* ${projName}\n` +
+      `💰 *Grand Total:* ₹${totalWithGst.toLocaleString('en-IN')}\n\n` +
+      `Click the link in your app dashboard to view the itemized breakdown. Let's start building! 🚀`;
+    const encodedMessage = encodeURIComponent(messageText);
+    const waUrl = `https://wa.me/${clientPhone}?text=${encodedMessage}`;
+
     const docHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -418,15 +702,25 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
   <div class="no-print-bar no-print">
     <span>💡 <strong>Proposal Generated!</strong> Ready to Print or Save as PDF.</span>
     <div>
+      <button class="btn" style="background-color: #059669; margin-right: 10px;" onclick="window.open('${waUrl}', '_blank')">Share on WhatsApp</button>
       <button class="btn" onclick="window.print()">Print / Save PDF</button>
     </div>
   </div>
   <div class="container">
     <div class="header">
       <div>
-        <h1>BuildEstimate Inc.</h1>
-        <p>Premium Civil Contractors & Interior Architects</p>
-        <p>GSTIN: 27AAAAA1111A1Z1 | contact@buildestimate.com</p>
+        ${businessLogo ? `<img src="${businessLogo}" alt="Business Logo" style="max-height: 50px; margin-bottom: 10px; display: block;" />` : ""}
+        <h1>${companyName}</h1>
+        ${companyAddress ? `<p>${companyAddress}</p>` : ""}
+        ${(companyGstin || companyPhone || companyEmail) ? `
+        <p>
+          ${companyGstin ? `GSTIN: ${companyGstin}` : ""}
+          ${companyGstin && (companyPhone || companyEmail) ? " | " : ""}
+          ${companyPhone ? `Tel: ${companyPhone}` : ""}
+          ${companyPhone && companyEmail ? " | " : ""}
+          ${companyEmail ? `Email: ${companyEmail}` : ""}
+        </p>
+        ` : ""}
       </div>
       <div class="quote-info">
         <span class="badge">Commercial Proposal</span>
@@ -448,92 +742,62 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
       </div>
     </div>
 
-    <div class="section-title">1. Civil, Excavation & Structure Works</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Description</th>
-          <th class="text-right" style="width: 100px;">Qty</th>
-          <th class="text-right" style="width: 100px;">Unit</th>
-          <th class="text-right" style="width: 120px;">Rate (₹)</th>
-          <th class="text-right" style="width: 140px;">Amount (₹)</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${civilItems.map(item => `
-          <tr>
-            <td>${item.name}</td>
-            <td class="text-right">${(item.quantity ?? 1).toLocaleString()}</td>
-            <td class="text-right">${item.unit ?? 'sqft'}</td>
-            <td class="text-right">₹${(item.rate ?? item.amount).toLocaleString()}</td>
-            <td class="text-right">₹${item.amount.toLocaleString()}</td>
-          </tr>
-        `).join('')}
-        ${civilItems.length === 0 ? '<tr><td colspan="5" style="color: #94a3b8; text-align: center;">No civil items added.</td></tr>' : ''}
-        <tr style="background-color: #f8fafc; font-weight: 700;">
-          <td colspan="4">Civil Category Subtotal</td>
-          <td class="text-right">₹${totalCivil.toLocaleString()}</td>
-        </tr>
-      </tbody>
-    </table>
+    ${(() => {
+      const categories = [
+        {
+          id: "civil",
+          name: "1. Civil, Excavation, Structure & Brickwork",
+          total: totalCivil,
+          items: civilItems,
+        },
+        {
+          id: "electrical",
+          name: "2. Electrical conduits, copper cables & DB panels",
+          total: totalElectrical,
+          items: electricalItems,
+        },
+        {
+          id: "finishes",
+          name: "3. Architectural painting, finishes & marble flooring",
+          total: totalFinishes,
+          items: finishesItems,
+        },
+        {
+          id: "interior_finishing",
+          name: "Premium Home Interior, Woodwork & False Ceiling",
+          total: totalInteriorFinishing,
+          items: interiorFinishingItems,
+        }
+      ];
 
-    <div class="section-title">2. Electrical Conduits & Copper Cabling</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Description</th>
-          <th class="text-right" style="width: 100px;">Qty</th>
-          <th class="text-right" style="width: 100px;">Unit</th>
-          <th class="text-right" style="width: 120px;">Rate (₹)</th>
-          <th class="text-right" style="width: 140px;">Amount (₹)</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${electricalItems.map(item => `
-          <tr>
-            <td>${item.name}</td>
-            <td class="text-right">${(item.quantity ?? 1).toLocaleString()}</td>
-            <td class="text-right">${item.unit ?? 'sqft'}</td>
-            <td class="text-right">₹${(item.rate ?? item.amount).toLocaleString()}</td>
-            <td class="text-right">₹${item.amount.toLocaleString()}</td>
-          </tr>
-        `).join('')}
-        ${electricalItems.length === 0 ? '<tr><td colspan="5" style="color: #94a3b8; text-align: center;">No electrical items added.</td></tr>' : ''}
-        <tr style="background-color: #f8fafc; font-weight: 700;">
-          <td colspan="4">Electrical Category Subtotal</td>
-          <td class="text-right">₹${totalElectrical.toLocaleString()}</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="section-title">3. Architectural Painting & Finishes</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Description</th>
-          <th class="text-right" style="width: 100px;">Qty</th>
-          <th class="text-right" style="width: 100px;">Unit</th>
-          <th class="text-right" style="width: 120px;">Rate (₹)</th>
-          <th class="text-right" style="width: 140px;">Amount (₹)</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${finishesItems.map(item => `
-          <tr>
-            <td>${item.name}</td>
-            <td class="text-right">${(item.quantity ?? 1).toLocaleString()}</td>
-            <td class="text-right">${item.unit ?? 'sqft'}</td>
-            <td class="text-right">₹${(item.rate ?? item.amount).toLocaleString()}</td>
-            <td class="text-right">₹${item.amount.toLocaleString()}</td>
-          </tr>
-        `).join('')}
-        ${finishesItems.length === 0 ? '<tr><td colspan="5" style="color: #94a3b8; text-align: center;">No finishes items added.</td></tr>' : ''}
-        <tr style="background-color: #f8fafc; font-weight: 700;">
-          <td colspan="4">Finishes Category Subtotal</td>
-          <td class="text-right">₹${totalFinishes.toLocaleString()}</td>
-        </tr>
-      </tbody>
-    </table>
+      return categories
+        .filter(c => c.total > 0)
+        .map((c, index) => `
+          <div class="section-title">${index + 1}. ${c.name.replace(/^\d+\.\s*/, '')}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th class="text-right" style="width: 100px;">Qty</th>
+                <th class="text-right" style="width: 100px;">Unit</th>
+                <th class="text-right" style="width: 120px;">Rate (₹)</th>
+                <th class="text-right" style="width: 140px;">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${c.items.map(item => `
+                <tr>
+                  <td>${item.name}</td>
+                  <td class="text-right">${(item.quantity ?? 1).toLocaleString()}</td>
+                  <td class="text-right">${item.unit ?? 'sqft'}</td>
+                  <td class="text-right">₹${(item.rate ?? item.amount).toLocaleString()}</td>
+                  <td class="text-right">₹${item.amount.toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `).join('');
+    })()}
 
     <div class="totals-container">
       <div class="totals-row">
@@ -557,6 +821,11 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
       <p>3. Any deviations, extra items, or modifications from the listed scopes will be billed extra at actuals.</p>
       <p style="margin-top: 15px; font-style: italic; text-align: center;">Thank you for choosing BuildEstimate Inc. as your construction partner!</p>
     </div>
+    ${(tenantProfile?.subscription_plan || "Free Trial") === "Free Trial" ? `
+    <div style="margin-top: 30px; text-align: center; border: 1px solid #fed7aa; background-color: #fffbeb; padding: 12px; border-radius: 8px; font-size: 11px; font-weight: bold; color: #b45309; display: flex; align-items: center; justify-content: center; gap: 6px;">
+      <span>Generated via BuildEstimate BOS Trial</span>
+    </div>
+    ` : ""}
   </div>
   <script>
     window.onload = function() {
@@ -952,109 +1221,148 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
         <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
           CATEGORY BREAKDOWN
         </h3>
+        <button
+          onClick={() => handleOpenAddModal("civil")}
+          className="text-xs font-extrabold text-slate-900 hover:underline flex items-center gap-1 py-1 px-2.5 rounded border border-slate-200 bg-white hover:bg-slate-50 shadow-sm active:scale-95 transition-all"
+        >
+          <span className="material-symbols-outlined text-sm font-bold">add</span> Add Line Item
+        </button>
       </div>
 
       {/* Category Bento List Cluster */}
       <div className="space-y-4">
         {/* Category Card: Civil Work */}
-        <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
-          <div
-            onClick={() => toggleCategory("civil")}
-            className="p-4 flex items-center justify-between cursor-pointer active:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-900 border border-slate-200">
-                <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-                  foundation
+        {totalCivil > 0 && (
+          <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
+            <div
+              onClick={() => toggleCategory("civil")}
+              className="p-4 flex items-center justify-between cursor-pointer active:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-900 border border-slate-200">
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    foundation
+                  </span>
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-900 text-sm">Civil Work</h4>
+                  <p className="text-xs text-slate-500">
+                    {getPercentage(totalCivil)}% of total estimate
+                  </p>
+                </div>
+              </div>
+              <div className="text-right flex items-center gap-2">
+                <div>
+                  <p className="font-extrabold text-slate-900 text-sm">₹{totalCivil.toLocaleString()}</p>
+                </div>
+                <span className={`material-symbols-outlined text-slate-500 transition-transform duration-200 ${expandedCategories.civil ? "rotate-180" : ""}`}>
+                  expand_more
                 </span>
               </div>
-              <div>
-                <h4 className="font-extrabold text-slate-900 text-sm">Civil Work</h4>
-                <p className="text-xs text-slate-500">
-                  {((totalCivil / grandTotal) * 100).toFixed(0)}% of total estimate
-                </p>
-              </div>
             </div>
-            <div className="text-right flex items-center gap-2">
-              <div>
-                <p className="font-extrabold text-slate-900 text-sm">₹{totalCivil.toLocaleString()}</p>
-              </div>
-              <span className={`material-symbols-outlined text-slate-500 transition-transform duration-200 ${expandedCategories.civil ? "rotate-180" : ""}`}>
-                expand_more
-              </span>
-            </div>
-          </div>
 
-          {expandedCategories.civil && (
-            <div className="px-4 pb-4 space-y-3 border-t border-slate-50 pt-3">
-              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-slate-950 rounded-full"
-                  style={{ width: `${(totalCivil / grandTotal) * 100}%` }}
-                />
-              </div>
+            {expandedCategories.civil && (
+              <div className="px-4 pb-4 space-y-3 border-t border-slate-50 pt-3">
+                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-slate-950 rounded-full"
+                    style={{ width: `${getPercentage(totalCivil)}%` }}
+                  />
+                </div>
 
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/60 space-y-2">
-                {civilItems.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-2">No items added yet</p>
-                ) : (
-                  civilItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-xs group py-1 border-b border-slate-100 last:border-0">
-                      <div className="flex-1">
-                        <span className="text-slate-600 font-medium">{item.name}</span>
-                        {item.quantity !== undefined && item.rate !== undefined && (
-                          <p className="text-[10px] text-slate-400 font-medium">
-                            {item.quantity.toLocaleString()} {item.unit || "sqft"} @ ₹{item.rate.toLocaleString()}/{item.unit || "sqft"}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-slate-900">₹{item.amount.toLocaleString()}</span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditModal("civil", idx, item);
-                            }}
-                            className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-slate-900 transition-colors"
-                            title="Edit Item"
-                          >
-                            <span className="material-symbols-outlined text-[15px] font-bold">edit</span>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmAction({
-                                message: `Are you sure you want to delete "${item.name}"?`,
-                                onConfirm: () => handleDeleteLineItem("civil", idx)
-                              });
-                            }}
-                            className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600 transition-colors"
-                            title="Delete Item"
-                          >
-                            <span className="material-symbols-outlined text-[15px] font-bold">delete</span>
-                          </button>
+                {totalCivil > 0 && selectedProject?.estimates?.civil_vendor_name && (
+                  <div className="bg-emerald-50 p-2.5 rounded-lg flex items-center justify-between border border-emerald-200 shadow-sm transition-all">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-emerald-700 text-sm font-bold">verified</span>
+                      <p className="text-xs font-bold text-emerald-800">Verified by Vendor: {selectedProject.estimates.civil_vendor_name}</p>
+                    </div>
+                    <button
+                      onClick={() => handleOpenAssignVendor("civil")}
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline px-2 py-0.5 rounded hover:bg-emerald-100/50 transition-colors"
+                    >
+                      Change
+                    </button>
+                  </div>
+                )}
+
+                {totalCivil > 0 && !selectedProject?.estimates?.civil_vendor_name && (
+                  <div className="bg-slate-50 p-2.5 rounded-lg flex items-center justify-between border border-slate-200/60 border-dashed transition-all">
+                    <div className="flex items-center gap-2 text-slate-500">
+                      <span className="material-symbols-outlined text-slate-400 text-sm">handshake</span>
+                      <p className="text-xs font-medium">No verified vendor assigned yet</p>
+                    </div>
+                    <button
+                      onClick={() => handleOpenAssignVendor("civil")}
+                      className="text-[11px] font-extrabold text-slate-900 hover:underline flex items-center gap-0.5 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                    >
+                      Assign Vendor
+                    </button>
+                  </div>
+                )}
+
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/60 space-y-2">
+                  {civilItems.length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-2">No items added yet</p>
+                  ) : (
+                    civilItems.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs group py-1 border-b border-slate-100 last:border-0">
+                        <div className="flex-1">
+                          <span className="text-slate-600 font-medium">{item.name}</span>
+                          {item.quantity !== undefined && item.rate !== undefined && (
+                            <p className="text-[10px] text-slate-400 font-medium">
+                              {item.quantity.toLocaleString()} {item.unit || "sqft"} @ ₹{item.rate.toLocaleString()}/{item.unit || "sqft"}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-slate-900">₹{item.amount.toLocaleString()}</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditModal("civil", idx, item);
+                              }}
+                              className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-slate-900 transition-colors"
+                              title="Edit Item"
+                            >
+                              <span className="material-symbols-outlined text-[15px] font-bold">edit</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirmAction({
+                                  message: `Are you sure you want to delete "${item.name}"?`,
+                                  onConfirm: () => handleDeleteLineItem("civil", idx)
+                                });
+                              }}
+                              className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600 transition-colors"
+                              title="Delete Item"
+                            >
+                              <span className="material-symbols-outlined text-[15px] font-bold">delete</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
-                )}
-              </div>
+                    ))
+                  )}
+                </div>
 
-              <button
-                onClick={() => handleOpenAddModal("civil")}
-                className="w-full h-11 border border-dashed border-slate-300 rounded-lg flex items-center justify-center gap-1 text-xs font-bold text-slate-500 hover:text-black hover:border-slate-400 hover:bg-slate-50 active:scale-[0.98] transition-all"
-              >
-                <span className="material-symbols-outlined text-sm font-bold">add</span> ADD LINE ITEM
-              </button>
-            </div>
-          )}
-        </section>
+                <button
+                  onClick={() => handleOpenAddModal("civil")}
+                  className="w-full h-11 border border-dashed border-slate-300 rounded-lg flex items-center justify-center gap-1 text-xs font-bold text-slate-500 hover:text-black hover:border-slate-400 hover:bg-slate-50 active:scale-[0.98] transition-all"
+                >
+                  <span className="material-symbols-outlined text-sm font-bold">add</span> ADD LINE ITEM
+                </button>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Category Card: Electrical */}
-        <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
-          <div
-            onClick={() => toggleCategory("electrical")}
+        {totalElectrical > 0 && (
+          <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
+            <div
+              onClick={() => toggleCategory("electrical")}
             className="p-4 flex items-center justify-between cursor-pointer active:bg-slate-50 transition-colors"
           >
             <div className="flex items-center gap-3">
@@ -1064,7 +1372,7 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
               <div>
                 <h4 className="font-extrabold text-slate-900 text-sm">Electrical</h4>
                 <p className="text-xs text-slate-500">
-                  {((totalElectrical / grandTotal) * 100).toFixed(0)}% of total estimate
+                  {getPercentage(totalElectrical)}% of total estimate
                 </p>
               </div>
             </div>
@@ -1083,9 +1391,39 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
               <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-slate-950 rounded-full"
-                  style={{ width: `${(totalElectrical / grandTotal) * 100}%` }}
+                  style={{ width: `${getPercentage(totalElectrical)}%` }}
                 />
               </div>
+
+              {totalElectrical > 0 && selectedProject?.estimates?.electrical_vendor_name && (
+                <div className="bg-emerald-50 p-2.5 rounded-lg flex items-center justify-between border border-emerald-200 shadow-sm transition-all">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-emerald-700 text-sm font-bold">verified</span>
+                    <p className="text-xs font-bold text-emerald-800">Verified by Vendor: {selectedProject.estimates.electrical_vendor_name}</p>
+                  </div>
+                  <button
+                    onClick={() => handleOpenAssignVendor("electrical")}
+                    className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline px-2 py-0.5 rounded hover:bg-emerald-100/50 transition-colors"
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
+
+              {totalElectrical > 0 && !selectedProject?.estimates?.electrical_vendor_name && (
+                <div className="bg-slate-50 p-2.5 rounded-lg flex items-center justify-between border border-slate-200/60 border-dashed transition-all">
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <span className="material-symbols-outlined text-slate-400 text-sm">handshake</span>
+                    <p className="text-xs font-medium">No verified vendor assigned yet</p>
+                  </div>
+                  <button
+                    onClick={() => handleOpenAssignVendor("electrical")}
+                    className="text-[11px] font-extrabold text-slate-900 hover:underline flex items-center gap-0.5 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  >
+                    Assign Vendor
+                  </button>
+                </div>
+              )}
 
               <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/60 space-y-2">
                 {electricalItems.length === 0 ? (
@@ -1143,11 +1481,13 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
             </div>
           )}
         </section>
+        )}
 
         {/* Category Card: Finishes */}
-        <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
-          <div
-            onClick={() => toggleCategory("finishes")}
+        {totalFinishes > 0 && (
+          <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
+            <div
+              onClick={() => toggleCategory("finishes")}
             className="p-4 flex items-center justify-between cursor-pointer active:bg-slate-50 transition-colors"
           >
             <div className="flex items-center gap-3">
@@ -1157,7 +1497,7 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
               <div>
                 <h4 className="font-extrabold text-slate-900 text-sm">Finishes</h4>
                 <p className="text-xs text-slate-500">
-                  {((totalFinishes / grandTotal) * 100).toFixed(0)}% of total estimate
+                  {getPercentage(totalFinishes)}% of total estimate
                 </p>
               </div>
             </div>
@@ -1176,15 +1516,39 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
               <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-slate-950 rounded-full"
-                  style={{ width: `${(totalFinishes / grandTotal) * 100}%` }}
+                  style={{ width: `${getPercentage(totalFinishes)}%` }}
                 />
               </div>
 
-              {/* Vendor Verified Badge */}
-              <div className="bg-emerald-50 p-3 rounded-lg flex items-center gap-3 border border-emerald-200">
-                <span className="material-symbols-outlined text-emerald-700 font-bold">verified</span>
-                <p className="text-xs font-bold text-emerald-800">Verified by Vendor: Gupta Marbles</p>
-              </div>
+              {totalFinishes > 0 && selectedProject?.estimates?.finishes_vendor_name && (
+                <div className="bg-emerald-50 p-2.5 rounded-lg flex items-center justify-between border border-emerald-200 shadow-sm transition-all">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-emerald-700 text-sm font-bold">verified</span>
+                    <p className="text-xs font-bold text-emerald-800">Verified by Vendor: {selectedProject.estimates.finishes_vendor_name}</p>
+                  </div>
+                  <button
+                    onClick={() => handleOpenAssignVendor("finishes")}
+                    className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline px-2 py-0.5 rounded hover:bg-emerald-100/50 transition-colors"
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
+
+              {totalFinishes > 0 && !selectedProject?.estimates?.finishes_vendor_name && (
+                <div className="bg-slate-50 p-2.5 rounded-lg flex items-center justify-between border border-slate-200/60 border-dashed transition-all">
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <span className="material-symbols-outlined text-slate-400 text-sm">handshake</span>
+                    <p className="text-xs font-medium">No verified vendor assigned yet</p>
+                  </div>
+                  <button
+                    onClick={() => handleOpenAssignVendor("finishes")}
+                    className="text-[11px] font-extrabold text-slate-900 hover:underline flex items-center gap-0.5 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  >
+                    Assign Vendor
+                  </button>
+                </div>
+              )}
 
               <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/60 space-y-2">
                 {finishesItems.length === 0 ? (
@@ -1242,6 +1606,132 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
             </div>
           )}
         </section>
+        )}
+
+        {/* Category Card: Interior & Woodwork */}
+        {totalInteriorFinishing > 0 && (
+          <section className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm transition-all duration-200">
+            <div
+              onClick={() => toggleCategory("interior_finishing")}
+              className="p-4 flex items-center justify-between cursor-pointer active:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-900 border border-slate-200">
+                  <span className="material-symbols-outlined">chair</span>
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-900 text-sm">Premium Home Interior, Woodwork & False Ceiling</h4>
+                <p className="text-xs text-slate-500">
+                  {getPercentage(totalInteriorFinishing)}% of total estimate
+                </p>
+              </div>
+            </div>
+            <div className="text-right flex items-center gap-2">
+              <div>
+                <p className="font-extrabold text-slate-900 text-sm">₹{totalInteriorFinishing.toLocaleString()}</p>
+              </div>
+              <span className={`material-symbols-outlined text-slate-500 transition-transform duration-200 ${expandedCategories.interior_finishing ? "rotate-180" : ""}`}>
+                expand_more
+              </span>
+            </div>
+          </div>
+
+          {expandedCategories.interior_finishing && (
+            <div className="px-4 pb-4 space-y-3 border-t border-slate-50 pt-3">
+              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-slate-950 rounded-full"
+                  style={{ width: `${getPercentage(totalInteriorFinishing)}%` }}
+                />
+              </div>
+
+              {totalInteriorFinishing > 0 && selectedProject?.estimates?.interior_vendor_name && (
+                <div className="bg-emerald-50 p-2.5 rounded-lg flex items-center justify-between border border-emerald-200 shadow-sm transition-all">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-emerald-700 text-sm font-bold">verified</span>
+                    <p className="text-xs font-bold text-emerald-800">Verified by Vendor: {selectedProject.estimates.interior_vendor_name}</p>
+                  </div>
+                  <button
+                    onClick={() => handleOpenAssignVendor("interior_finishing")}
+                    className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline px-2 py-0.5 rounded hover:bg-emerald-100/50 transition-colors"
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
+
+              {totalInteriorFinishing > 0 && !selectedProject?.estimates?.interior_vendor_name && (
+                <div className="bg-slate-50 p-2.5 rounded-lg flex items-center justify-between border border-slate-200/60 border-dashed transition-all">
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <span className="material-symbols-outlined text-slate-400 text-sm">handshake</span>
+                    <p className="text-xs font-medium">No verified vendor assigned yet</p>
+                  </div>
+                  <button
+                    onClick={() => handleOpenAssignVendor("interior_finishing")}
+                    className="text-[11px] font-extrabold text-slate-900 hover:underline flex items-center gap-0.5 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  >
+                    Assign Vendor
+                  </button>
+                </div>
+              )}
+
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/60 space-y-2">
+                {interiorFinishingItems.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-2">No items added yet</p>
+                ) : (
+                  interiorFinishingItems.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs group py-1 border-b border-slate-100 last:border-0">
+                      <div className="flex-1">
+                        <span className="text-slate-600 font-medium">{item.name}</span>
+                        {item.quantity !== undefined && item.rate !== undefined && (
+                          <p className="text-[10px] text-slate-400 font-medium">
+                            {item.quantity.toLocaleString()} {item.unit || "sqft"} @ ₹{item.rate.toLocaleString()}/{item.unit || "sqft"}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-slate-900">₹{item.amount.toLocaleString()}</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditModal("interior_finishing", idx, item);
+                            }}
+                            className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-slate-900 transition-colors"
+                            title="Edit Item"
+                          >
+                            <span className="material-symbols-outlined text-[15px] font-bold">edit</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmAction({
+                                message: `Are you sure you want to delete "${item.name}"?`,
+                                onConfirm: () => handleDeleteLineItem("interior_finishing", idx)
+                              });
+                            }}
+                            className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600 transition-colors"
+                            title="Delete Item"
+                          >
+                            <span className="material-symbols-outlined text-[15px] font-bold">delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <button
+                onClick={() => handleOpenAddModal("interior_finishing")}
+                className="w-full h-11 border border-dashed border-slate-300 rounded-lg flex items-center justify-center gap-1 text-xs font-bold text-slate-500 hover:text-black hover:border-slate-400 hover:bg-slate-50 active:scale-[0.98] transition-all"
+              >
+                <span className="material-symbols-outlined text-sm font-bold">add</span> ADD LINE ITEM
+              </button>
+            </div>
+          )}
+        </section>
+        )}
       </div>
 
       {/* Floating Info Badge */}
@@ -1283,12 +1773,24 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
                   <p className="text-xs text-slate-500">Official Cost Estimate & Commercial Proposal</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setIsQuoteModalOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <span className="material-symbols-outlined text-xl">close</span>
-              </button>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={handleDualActionWhatsApp}
+                  className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl shadow-sm transition-all text-xs active:scale-95"
+                >
+                  {/* WhatsApp Icon */}
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397 0 11.948 0c3.179.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.907-11.893 11.907-2.01-.001-3.986-.51-5.742-1.477L0 24zm6.59-4.846c1.63.967 3.559 1.478 5.35 1.479 5.548 0 10.064-4.515 10.066-10.066.002-2.688-1.043-5.216-2.943-7.115C17.164 1.551 14.639.507 11.95.507c-5.556 0-10.074 4.52-10.076 10.072-.001 1.777.464 3.511 1.348 5.03L1.242 21.22l5.405-1.417z"/>
+                  </svg>
+                  Share on WhatsApp
+                </button>
+                <button 
+                  onClick={() => setIsQuoteModalOpen(false)}
+                  className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-xl">close</span>
+                </button>
+              </div>
             </div>
 
             {/* Letterhead Preview Sheet */}
@@ -1296,10 +1798,24 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
               
               {/* Header Letterhead Grid */}
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 border-b border-slate-200 pb-4">
-                <div>
-                  <h4 className="font-extrabold text-slate-900 text-lg uppercase tracking-tight">BuildEstimate Inc.</h4>
-                  <p className="text-[10px] text-slate-500">Premium Civil Contractors & Interior Architects</p>
-                  <p className="text-[10px] text-slate-500">GSTIN: 27AAAAA1111A1Z1</p>
+                <div className="space-y-1">
+                  {businessLogo && (
+                    <img 
+                      src={businessLogo} 
+                      alt="Logo" 
+                      referrerPolicy="no-referrer" 
+                      className="max-h-12 object-contain mb-2 rounded-lg"
+                    />
+                  )}
+                  <h4 className="font-extrabold text-slate-900 text-base uppercase tracking-tight">{companyName}</h4>
+                  {companyAddress && <p className="text-[10px] text-slate-500">{companyAddress}</p>}
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {companyGstin && `GSTIN: ${companyGstin}`}
+                    {companyGstin && (companyPhone || companyEmail) && " | "}
+                    {companyPhone && `Tel: ${companyPhone}`}
+                    {companyPhone && companyEmail && " | "}
+                    {companyEmail && `Email: ${companyEmail}`}
+                  </p>
                 </div>
                 <div className="sm:text-right">
                   <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-black px-2 py-0.5 rounded uppercase">
@@ -1346,29 +1862,77 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
               </div>
 
               {/* Line Item Summaries */}
-              <div className="border border-slate-200 rounded-lg overflow-hidden text-xs">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-100 border-b border-slate-200">
-                      <th className="p-2.5 font-bold text-slate-600">Scope of Work Category</th>
-                      <th className="p-2.5 font-bold text-slate-600 text-right">Estimated Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white">
-                    <tr>
-                      <td className="p-2.5 text-slate-700 font-medium">1. Civil, Excavation, Structure & Brickwork</td>
-                      <td className="p-2.5 text-slate-900 font-extrabold text-right">₹{totalCivil.toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                      <td className="p-2.5 text-slate-700 font-medium">2. Electrical conduits, copper cables & DB panels</td>
-                      <td className="p-2.5 text-slate-900 font-extrabold text-right">₹{totalElectrical.toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                      <td className="p-2.5 text-slate-700 font-medium">3. Architectural painting, finishes & marble flooring</td>
-                      <td className="p-2.5 text-slate-900 font-extrabold text-right">₹{totalFinishes.toLocaleString()}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div className="border border-slate-200 rounded-lg p-5 bg-white text-xs space-y-4 shadow-sm">
+                {(() => {
+                  const categories = [
+                    {
+                      id: "civil",
+                      name: "1. Civil, Excavation, Structure & Brickwork",
+                      total: totalCivil,
+                      items: civilItems,
+                    },
+                    {
+                      id: "electrical",
+                      name: "2. Electrical conduits, copper cables & DB panels",
+                      total: totalElectrical,
+                      items: electricalItems,
+                    },
+                    {
+                      id: "finishes",
+                      name: "3. Architectural painting, finishes & marble flooring",
+                      total: totalFinishes,
+                      items: finishesItems,
+                    },
+                    {
+                      id: "interior_finishing",
+                      name: "Premium Home Interior, Woodwork & False Ceiling",
+                      total: totalInteriorFinishing,
+                      items: interiorFinishingItems,
+                    }
+                  ];
+
+                  const activeCategories = categories.filter((category) => category.total > 0);
+
+                  if (activeCategories.length === 0) {
+                    return (
+                      <p className="text-center py-4 text-slate-400 italic">No line items added to this estimate yet.</p>
+                    );
+                  }
+
+                  return activeCategories.map((category, index) => {
+                    const categoryTotal = category.total;
+                    const percentage = grandTotal > 0 ? ((categoryTotal / grandTotal) * 100).toFixed(0) : 0;
+                    return (
+                      <div key={category.id} className="mb-6 border-b border-slate-100 pb-4 last:mb-0 last:border-b-0 last:pb-0">
+                        {/* Dynamic Category Heading with exact safe percentage layout */}
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center text-[10px] font-black">
+                              {index + 1}
+                            </span>
+                            <span>{category.name.replace(/^\d+\.\s*/, '')}</span>
+                          </h3>
+                          <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-md">
+                            {percentage}% of total estimate
+                          </span>
+                        </div>
+                        
+                        {/* Sub-items Grid Details (No Subtotal row at the bottom) */}
+                        <div className="space-y-2 pl-2">
+                          {category.items.map((item: any, idx: number) => {
+                            const itemRate = item.rate ?? item.amount;
+                            return (
+                              <div key={idx} className="flex justify-between items-center text-xs text-slate-600 hover:bg-slate-50/50 p-1 rounded transition-colors">
+                                <span>{item.name} ({item.quantity} {item.unit || 'sqft'} @ ₹{itemRate.toLocaleString()})</span>
+                                <span className="font-semibold text-slate-900">₹{item.amount.toLocaleString()}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
 
               {/* Pricing Totals Breakout */}
@@ -1396,6 +1960,103 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
 
             </div>
 
+            {/* Share Quote Workflow Card - Dual-Action Action Bar */}
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200/80 max-w-md mx-auto w-full shadow-xs space-y-4">
+              <div>
+                <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-4 text-center flex items-center justify-center gap-1.5">
+                  <span className="material-symbols-outlined text-base text-emerald-500">share_reviews</span>
+                  Dual-Action Share Workflow
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  {/* ACTION 1: Download Estimate PDF */}
+                  <button 
+                    onClick={handleDownloadQuote} 
+                    className="bg-slate-900 hover:bg-black text-white font-extrabold py-3 px-4 rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-xs flex flex-col justify-center items-center gap-1.5 active:scale-95 cursor-pointer text-center"
+                  >
+                    <span className="material-symbols-outlined text-lg">download</span>
+                    <span>Download Estimate PDF</span>
+                  </button>
+
+                  {/* ACTION 2: Share on WhatsApp */}
+                  <button 
+                    onClick={handleDualActionWhatsApp}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3 px-4 rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-xs flex flex-col justify-center items-center gap-1.5 active:scale-95 cursor-pointer text-center"
+                  >
+                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397 0 11.948 0c3.179.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.907-11.893 11.907-2.01-.001-3.986-.51-5.742-1.477L0 24zm6.59-4.846c1.63.967 3.559 1.478 5.35 1.479 5.548 0 10.064-4.515 10.066-10.066.002-2.688-1.043-5.216-2.943-7.115C17.164 1.551 14.639.507 11.95.507c-5.556 0-10.074 4.52-10.076 10.072-.001 1.777.464 3.511 1.348 5.03L1.242 21.22l5.405-1.417z"/>
+                    </svg>
+                    <span>Share on WhatsApp</span>
+                  </button>
+                </div>
+                
+                <p className="text-[10px] text-slate-400/90 text-center mt-3 leading-relaxed italic">
+                  💡 Pro-Tip: Once the WhatsApp chat opens, click the attachment 📎 icon to instantly forward your downloaded PDF proposal.
+                </p>
+              </div>
+
+              {/* ACTION 3: Public Shared Snapshot Link */}
+              <div className="border-t border-slate-200/60 pt-4">
+                <h4 className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-2.5 text-center flex items-center justify-center gap-1">
+                  <span className="material-symbols-outlined text-xs text-amber-500">public</span>
+                  Client Shared Snapshot Portal
+                </h4>
+
+                {!generatedShareId ? (
+                  <button
+                    onClick={handleGeneratePublicLink}
+                    disabled={isGeneratingLink}
+                    className="w-full h-10 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-slate-950 font-extrabold rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-xs flex justify-center items-center gap-2 active:scale-95 cursor-pointer"
+                  >
+                    {isGeneratingLink ? (
+                      <>
+                        <span className="material-symbols-outlined text-sm animate-spin">sync</span>
+                        <span>Publishing Snapshot...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-sm">link</span>
+                        <span>Generate Public Link</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <div className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-mono truncate text-slate-600 select-all shadow-2xs flex items-center">
+                        {`${window.location.origin}${window.location.pathname}?share=${generatedShareId}`}
+                      </div>
+                      <button
+                        onClick={handleCopyGeneratedLink}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1 select-none cursor-pointer ${
+                          linkCopied 
+                            ? "bg-green-600 text-white" 
+                            : "bg-slate-900 hover:bg-black text-white"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-xs">
+                          {linkCopied ? "check" : "content_copy"}
+                        </span>
+                        <span>{linkCopied ? "Copied!" : "Copy"}</span>
+                      </button>
+                    </div>
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-[9px] text-green-600 font-semibold flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-ping"></span>
+                        Snapshot Active & Shareable!
+                      </span>
+                      <button 
+                        onClick={() => setGeneratedShareId(null)}
+                        className="text-[9px] text-slate-400 hover:text-slate-600 underline cursor-pointer"
+                      >
+                        Generate New Snapshot
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Modal Actions */}
             <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-slate-150">
               <button
@@ -1403,7 +2064,7 @@ export default function EstimatesView({ projects, clients = [], onAddLog, onUpda
                   const text = `
 CONSTRUCTION COMMERCIAL PROPOSAL
 =================================
-BuildEstimate Inc.
+${companyName}
 Quote #: EST-${selectedProject?.id || '001'}
 Date: ${new Date().toLocaleDateString('en-IN')}
 
@@ -1416,6 +2077,7 @@ SUMMARY OF ESTIMATES:
 1. Civil Work: ₹${totalCivil.toLocaleString()}
 2. Electrical: ₹${totalElectrical.toLocaleString()}
 3. Architectural Finishes: ₹${totalFinishes.toLocaleString()}
+4. Premium Interiors & Woodwork: ₹${totalInteriorFinishing.toLocaleString()}
 
 ---------------------------------
 Material & Labor Cost: ₹${grandTotal.toLocaleString()}
@@ -1424,7 +2086,7 @@ GST (${gstPercent}%): ₹${gstRupees.toLocaleString()}
 GRAND TOTAL QUOTATION: ₹${totalWithGst.toLocaleString()}
 
 Thank you for your business!
-BuildEstimate Inc.
+${companyName}
 `;
                   navigator.clipboard.writeText(text.trim()).then(() => {
                     setQuoteCopied(true);
@@ -1446,6 +2108,17 @@ BuildEstimate Inc.
               >
                 <span className="material-symbols-outlined text-sm">print</span>
                 PRINT / SAVE PDF
+              </button>
+
+              <button
+                onClick={handleDualActionWhatsApp}
+                className="flex-1 h-11 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider shadow-sm transition-all active:scale-95"
+              >
+                {/* WhatsApp Icon */}
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397 0 11.948 0c3.179.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.907-11.893 11.907-2.01-.001-3.986-.51-5.742-1.477L0 24zm6.59-4.846c1.63.967 3.559 1.478 5.35 1.479 5.548 0 10.064-4.515 10.066-10.066.002-2.688-1.043-5.216-2.943-7.115C17.164 1.551 14.639.507 11.95.507c-5.556 0-10.074 4.52-10.076 10.072-.001 1.777.464 3.511 1.348 5.03L1.242 21.22l5.405-1.417z"/>
+                </svg>
+                Share on WhatsApp
               </button>
 
               {selectedProject?.status === "Quotation" && (
@@ -1484,10 +2157,27 @@ BuildEstimate Inc.
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
             <h3 className="text-base font-black text-slate-900 uppercase tracking-wide">
-              {editingIndex !== null ? "Edit" : "Add"} Estimate Item to <span className="text-emerald-700 capitalize">{targetCategory}</span>
+              {editingIndex !== null ? "Edit Item" : "Add Item to Estimate"}
             </h3>
 
             <form onSubmit={handleAddLineItem} className="space-y-4">
+              {editingIndex === null && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                    Select Category
+                  </label>
+                  <select
+                    value={targetCategory || "civil"}
+                    onChange={(e) => setTargetCategory(e.target.value as any)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white cursor-pointer"
+                  >
+                    <option value="civil">Civil Work</option>
+                    <option value="electrical">Electrical</option>
+                    <option value="finishes">Finishes</option>
+                    <option value="interior_finishing">Premium Home Interior, Woodwork & False Ceiling</option>
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
                   Item Description
@@ -1653,9 +2343,18 @@ BuildEstimate Inc.
               </p>
 
               <div>
-                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5 tracking-wider">
-                  Select Associated Client
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                    Select Associated Client
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddClientOpen(true)}
+                    className="text-indigo-600 hover:text-indigo-800 text-[10px] font-extrabold uppercase hover:underline transition-all"
+                  >
+                    + Add New Client
+                  </button>
+                </div>
                 <select
                   value={selectedClientIdForAssignment}
                   onChange={(e) => setSelectedClientIdForAssignment(e.target.value)}
@@ -1701,6 +2400,180 @@ BuildEstimate Inc.
                 className="flex-1 h-10 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all"
               >
                 Save Association
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD NEW CLIENT MODAL */}
+      {isAddClientOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl relative">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                <span className="material-symbols-outlined text-indigo-600">person_add</span>
+                Add New Client
+              </h3>
+              <button 
+                onClick={() => setIsAddClientOpen(false)} 
+                className="material-symbols-outlined text-slate-400 hover:text-black transition-colors"
+              >
+                close
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateClient} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Client Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Ramesh Kumar"
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Client Phone
+                </label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="e.g. +91 98765 43210"
+                  value={newClientPhone}
+                  onChange={(e) => setNewClientPhone(e.target.value)}
+                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Project Location
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sector 62, Noida, UP"
+                  value={newClientLocation}
+                  onChange={(e) => setNewClientLocation(e.target.value)}
+                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddClientOpen(false)}
+                  className="w-1/2 h-10 border border-slate-300 hover:bg-slate-50 rounded-lg font-bold text-xs uppercase text-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-colors shadow-sm"
+                >
+                  Add Client
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Vendor Modal */}
+      {isVendorModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl relative">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-slate-900 font-bold">
+                <span className="material-symbols-outlined text-emerald-600">handshake</span>
+                <h3 className="text-base font-black uppercase tracking-wide">
+                  Assign Vendor to {vendorCategory === "civil" ? "Civil Work" : vendorCategory === "electrical" ? "Electrical" : vendorCategory === "finishes" ? "Finishes" : "Interior & Woodwork"}
+                </h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsVendorModalOpen(false);
+                  setVendorCategory(null);
+                }}
+                className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Choose an existing vendor from your database or write a custom name to verify material rates and quality.
+              </p>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5 tracking-wider">
+                  Select Registered Vendor
+                </label>
+                <select
+                  value={vendors.some(v => v.name === typedVendorName) ? typedVendorName : (typedVendorName ? "CUSTOM" : "")}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "CUSTOM") {
+                      setTypedVendorName("");
+                    } else {
+                      setTypedVendorName(val);
+                    }
+                  }}
+                  className="w-full h-11 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white cursor-pointer"
+                >
+                  <option value="">-- No Vendor Assigned --</option>
+                  {vendors.map(v => (
+                    <option key={v.id} value={v.name}>
+                      {v.name} ({v.category})
+                    </option>
+                  ))}
+                  <option value="CUSTOM">-- Custom/Other Vendor --</option>
+                </select>
+              </div>
+
+              {(!vendors.some(v => v.name === typedVendorName) || typedVendorName === "") && (
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                    Or Enter Custom Vendor Name
+                  </label>
+                  <input
+                    type="text"
+                    value={typedVendorName}
+                    onChange={(e) => setTypedVendorName(e.target.value)}
+                    placeholder="e.g. Gupta Marbles"
+                    className="w-full h-11 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsVendorModalOpen(false);
+                  setVendorCategory(null);
+                }}
+                className="flex-1 h-10 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-black uppercase tracking-wider transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleSaveVendor(typedVendorName);
+                }}
+                className="flex-1 h-10 bg-slate-900 hover:bg-black text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all"
+              >
+                Save Assignment
               </button>
             </div>
           </div>

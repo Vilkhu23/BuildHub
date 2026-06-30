@@ -55,6 +55,7 @@ export default function Navigation({
     { id: "orders", label: "Orders", icon: "receipt_long", roles: ["Owner", "Manager", "Supervisor"] },
     { id: "sitelog", label: "Site Log", icon: "mic", roles: ["Owner", "Supervisor", "Manager"] },
     { id: "properties", label: "Properties", icon: "domain", roles: ["Owner", "Telecaller", "Manager"] },
+    { id: "leads", label: "CRM Leads", icon: "hub", roles: ["Owner", "Manager", "Telecaller"] },
     { id: "settings", label: "Settings", icon: "settings", roles: ["Owner", "Manager"] },
   ];
 
@@ -225,7 +226,7 @@ export default function Navigation({
                 {item.icon}
               </span>
               <span className="text-[9px] font-extrabold uppercase tracking-wide mt-1">
-                {item.label === "Site Log" ? "Log" : item.label === "Properties" ? "Realty" : item.label}
+                {item.label === "Site Log" ? "Log" : item.label === "Properties" ? "Realty" : item.label === "CRM Leads" ? "CRM" : item.label}
               </span>
               {isActive && (
                 <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full mt-0.5 animate-pulse" />

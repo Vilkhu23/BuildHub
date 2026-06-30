@@ -118,5 +118,12 @@ service cloud.firestore {
         allow write: if isOwner(companyId) || isManager(companyId);
       }
     }
+
+    // Public Estimate Snapshot Share Path (Read-only by public, write by authenticated company users)
+    match /public_estimates/{shareId} {
+      allow read: if true;
+      allow create, update, write: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
   }
 }
