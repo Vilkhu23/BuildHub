@@ -61,7 +61,25 @@ export default function DashboardSummaryCard({
   };
 
   useEffect(() => {
-    fetchSummary();
+    const isEmpty =
+      (!projects || projects.length === 0) &&
+      (!inboundRevenues || inboundRevenues.length === 0) &&
+      (!dailyPayments || dailyPayments.length === 0) &&
+      (!officeExpenses || officeExpenses.length === 0) &&
+      (!vendors || vendors.length === 0);
+
+    if (isEmpty) {
+      setSummary("Welcome to BuildEstimate! Your database is currently a blank slate. Start by adding projects, logging client payments, or recording site expenses to view real-time portfolio analytics here.");
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      fetchSummary();
+    }, 1200);
+
+    return () => clearTimeout(timer);
   }, [projects, inboundRevenues, dailyPayments, officeExpenses, vendors]);
 
   return (

@@ -7,6 +7,7 @@ interface SettingsViewProps {
   userRole: "Owner" | "Manager" | "Supervisor" | "Telecaller";
   user: any;
   onAddLog: (log: string) => void;
+  onResetDatabase?: () => Promise<void>;
 }
 
 enum OperationType {
@@ -52,7 +53,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-export default function SettingsView({ userRole, user, onAddLog }: SettingsViewProps) {
+export default function SettingsView({ userRole, user, onAddLog, onResetDatabase }: SettingsViewProps) {
   const [settings, setSettings] = useState<CompanySettings>({
     companyName: "",
     gstin: "",
@@ -63,6 +64,8 @@ export default function SettingsView({ userRole, user, onAddLog }: SettingsViewP
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [confirmingPurge, setConfirmingPurge] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "error">("success");
 
@@ -427,6 +430,80 @@ export default function SettingsView({ userRole, user, onAddLog }: SettingsViewP
           </div>
         )}
       </form>
+
+      {/* DANGER ZONE - CLEAR DATABASE TO BLANK SLATE */}
+      <div id="danger-zone-container" className="mt-8 bg-rose-50 border border-rose-100 rounded-2xl p-5 md:p-6 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5 max-w-2xl">
+            <h3 className="text-sm font-extrabold text-rose-900 uppercase tracking-wide flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-rose-600 text-lg">warning</span>
+              Danger Zone: Purge Database
+            </h3>
+            <p className="text-xs text-rose-700 font-semibold leading-relaxed">
+              Permanently wipe all projects, clients, material stocks, properties, transactions, and site logs. This will reset your database to a completely blank slate.
+            </p>
+            <p className="text-[10px] text-rose-500 font-bold uppercase tracking-wider">
+              * Note: Active roles and user profiles will be retained so you can still log in and switch roles. This action is irreversible.
+            </p>
+          </div>
+          <div className="flex-shrink-0">
+            {!confirmingPurge ? (
+              <button
+                id="settings-reset-db-btn"
+                type="button"
+                disabled={isReadOnly || purging}
+                onClick={() => setConfirmingPurge(true)}
+                className="h-10 px-5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold uppercase tracking-wider text-[11px] rounded-xl flex items-center gap-2 shadow-xs transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">delete_forever</span>
+                <span>Reset to Blank DB</span>
+              </button>
+            ) : (
+              <div className="bg-white p-3 border border-rose-200 rounded-xl shadow-md space-y-3 max-w-xs">
+                <p className="text-[10px] text-slate-800 font-bold leading-normal">
+                  ⚠️ Are you absolutely sure? All construction logs and estimates will be lost forever.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    id="confirm-purge-btn"
+                    type="button"
+                    disabled={purging}
+                    onClick={async () => {
+                      setPurging(true);
+                      try {
+                        if (onResetDatabase) {
+                          await onResetDatabase();
+                          showToast("Database successfully cleared to a blank state!", "success");
+                          onAddLog("Database purged by owner request.");
+                        } else {
+                          showToast("Database reset is not supported in this environment.", "error");
+                        }
+                      } catch (err: any) {
+                        showToast("Purge failed: " + (err.message || err), "error");
+                      } finally {
+                        setPurging(false);
+                        setConfirmingPurge(false);
+                      }
+                    }}
+                    className="flex-1 py-1.5 bg-rose-700 hover:bg-rose-800 text-white text-[10px] font-extrabold uppercase tracking-wider rounded-lg text-center transition-all disabled:opacity-50"
+                  >
+                    {purging ? "Purging..." : "Yes, Purge"}
+                  </button>
+                  <button
+                    id="cancel-purge-btn"
+                    type="button"
+                    disabled={purging}
+                    onClick={() => setConfirmingPurge(false)}
+                    className="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-extrabold uppercase tracking-wider rounded-lg text-center transition-all"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

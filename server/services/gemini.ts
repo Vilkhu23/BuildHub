@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 let aiClient: GoogleGenAI | null = null;
+let dailyQuotaExceeded = false;
 
 export function getGeminiClient(): GoogleGenAI {
   if (!aiClient) {
@@ -27,6 +28,10 @@ export async function generateContentWithRetry(params: {
   contents: any;
   config?: any;
 }) {
+  if (dailyQuotaExceeded) {
+    throw new Error("GEMINI_QUOTA_EXCEEDED: Daily limit reached (20 requests/day free tier).");
+  }
+
   const ai = getGeminiClient();
   const maxRetries = 2;
   const backoffDelays = [2500, 5000];
@@ -35,11 +40,25 @@ export async function generateContentWithRetry(params: {
     try {
       return await ai.models.generateContent(params);
     } catch (error: any) {
-      // Check if it is a transient/overloaded/503/429 error
       const errStr = String(error?.message || error).toUpperCase();
       const errStatus = error?.status || "";
       const errCode = error?.code || 0;
 
+      // Detect if it is specifically a daily quota limit exhaustion
+      const isQuotaError = 
+        errStatus === "RESOURCE_EXHAUSTED" ||
+        errStr.includes("RESOURCE_EXHAUSTED") ||
+        errStr.includes("QUOTA EXCEEDED") ||
+        errStr.includes("LIMIT: 20") ||
+        errStr.includes("EXCEEDED YOUR CURRENT QUOTA");
+
+      if (isQuotaError) {
+        dailyQuotaExceeded = true;
+        console.warn("[Gemini API] Daily free-tier quota (20 requests/day) exceeded. Activating fast offline analytical fallbacks.");
+        throw new Error("GEMINI_QUOTA_EXCEEDED: Daily limit reached (20 requests/day free tier).");
+      }
+
+      // Check if it is a standard transient/overloaded/503/429 error
       const isTransient = 
         errStatus === "UNAVAILABLE" || 
         errCode === 503 || 
@@ -48,13 +67,12 @@ export async function generateContentWithRetry(params: {
         errStr.includes("429") || 
         errStr.includes("UNAVAILABLE") || 
         errStr.includes("HIGH DEMAND") || 
-        errStr.includes("RESOURCE_EXHAUSTED") || 
         errStr.includes("SPIKES IN DEMAND") || 
         errStr.includes("TEMPORARY");
 
       if (isTransient && attempt < maxRetries) {
         const delay = backoffDelays[attempt];
-        console.warn(`[Gemini API] Transient warning (${error.message || error}). Retrying attempt ${attempt + 1}/${maxRetries} after ${delay}ms...`);
+        console.warn(`[Gemini API] Transient warning. Retrying attempt ${attempt + 1}/${maxRetries} after ${delay}ms...`);
         await sleep(delay);
         continue;
       }

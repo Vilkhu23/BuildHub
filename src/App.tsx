@@ -14,7 +14,7 @@ import SettingsView from "./components/SettingsView";
 // Import Firebase Client Integration
 import { auth, googleProvider, db as firestoreDb } from "./lib/firebase";
 import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
-import { doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
 
 enum OperationType {
   CREATE = 'create',
@@ -160,6 +160,38 @@ export default function App() {
             results.forEach(res => {
               (loadedDb as any)[res.key] = res.data;
             });
+
+            // Automatically purge old pre-seeded projects and materials entries if detected
+            const hasPreseededData = 
+              (loadedDb.projects && loadedDb.projects.length > 0) || 
+              (loadedDb.material_stocks && loadedDb.material_stocks.length > 0);
+
+            if (hasPreseededData) {
+              addActivityLog("Syncing requests: Purging pre-seeded projects, quotations, and materials to a blank slate...");
+              const collectionsToClear = [
+                { key: "projects", path: "projects" },
+                { key: "material_stocks", path: "material_stocks" },
+                { key: "purchase_orders", path: "purchase_orders" },
+                { key: "alerts", path: "alerts" },
+                { key: "daily_payments", path: "daily_payments" },
+                { key: "inbound_revenues", path: "inbound_revenues" },
+                { key: "properties", path: "properties" },
+                { key: "clients", path: "clients" },
+                { key: "deal_adjustments", path: "deal_adjustments" },
+                { key: "buyer_requirements", path: "leads" },
+                { key: "vendors", path: "vendors" },
+                { key: "office_expenses", path: "office_expenses" }
+              ];
+
+              for (const col of collectionsToClear) {
+                const colRef = collection(firestoreDb, "companies", companyId, col.path);
+                const snap = await getDocs(colRef);
+                const deletePromises = snap.docs.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deletePromises);
+                (loadedDb as any)[col.key] = [];
+              }
+              addActivityLog("Database successfully reset to a completely blank slate.");
+            }
 
             setDb(loadedDb as DatabaseState);
             addActivityLog("Secure company cloud database loaded successfully from Firestore.");
@@ -564,6 +596,82 @@ export default function App() {
     }
   };
 
+  const handleResetDatabase = async () => {
+    if (!db) return;
+    addActivityLog("Initiating database purge to a clean, blank slate...");
+    setLoading(true);
+    
+    // Blank database state: keep the default profiles so role switching is still functional,
+    // and empty out everything else!
+    const blankDb: DatabaseState = {
+      profiles: db.profiles.map(p => ({ ...p })), // Keep existing profiles so user roles work
+      clients: [],
+      projects: [],
+      properties: [],
+      inbound_revenues: [],
+      daily_payments: [],
+      office_expenses: [],
+      deal_adjustments: [],
+      material_stocks: [],
+      vendors: [],
+      purchase_orders: [],
+      alerts: [],
+      buyer_requirements: [],
+    };
+
+    if (user) {
+      const companyId = user.uid;
+      try {
+        // Delete documents in Firestore for all collections (except profiles)
+        const collectionsToClear = [
+          "clients",
+          "projects",
+          "properties",
+          "leads", // buyer_requirements
+          "daily_payments",
+          "inbound_revenues",
+          "vendors",
+          "purchase_orders",
+          "material_stocks",
+          "office_expenses",
+          "deal_adjustments",
+          "alerts",
+        ];
+
+        for (const colPath of collectionsToClear) {
+          const colRef = collection(firestoreDb, "companies", companyId, colPath);
+          const snap = await getDocs(colRef);
+          const deletePromises = snap.docs.map(doc => deleteDoc(doc.ref));
+          await Promise.all(deletePromises);
+        }
+
+        setDb(blankDb);
+        addActivityLog("Your cloud database has been successfully purged to a blank slate.");
+      } catch (error: any) {
+        console.error("Error purging cloud database:", error);
+        addActivityLog("Failed to purge cloud database completely. Reverting to local purge.");
+        setDb(blankDb);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Offline/local mode: send POST with blankDb
+      try {
+        await fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(blankDb),
+        });
+        setDb(blankDb);
+        addActivityLog("Local sandboxed database reset to a blank slate.");
+      } catch (err) {
+        console.error("Error resetting local database:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
   if (loading || !db) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
@@ -677,6 +785,7 @@ export default function App() {
               userRole={activeRole}
               user={user}
               onAddLog={addActivityLog}
+              onResetDatabase={handleResetDatabase}
             />
           )}
         </div>
