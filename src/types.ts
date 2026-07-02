@@ -211,6 +211,7 @@ export interface DatabaseState {
   buyer_requirements: BuyerRequirement[];
   tenant_profiles: TenantProfile[]; // SaaS Tenant profiles
   leads?: Lead[];
+  crm_leads?: CRMLead[];
 }
 
 export interface Lead {
@@ -221,5 +222,30 @@ export interface Lead {
   location: string;
   source: 'Meta Ads' | 'WhatsApp' | 'Google Search' | 'Referral';
   status: 'New' | 'Quoted' | 'Follow-up';
+  created_at: string;
+}
+
+export interface LeadActivityLog {
+  id: string;
+  performed_by: string; // Name of the Owner/Manager/Telecaller
+  action: string;       // e.g., "Status Changed to Contacted", "Added Remark"
+  timestamp: string;
+}
+
+export interface CRMLead {
+  id: string;
+  tenant_id: string;
+  customer_name: string;
+  phone_number: string;
+  email?: string;
+  source: 'Facebook_Ads' | 'Instagram' | 'Website' | 'Manual';
+  project_interest: string;     // Specific tracking (e.g., "3 BHK Kharar Villa")
+  budget_tier?: string;         // e.g., "50L - 75L", "1Cr+"
+  lead_status: 'New' | 'Contacted' | 'Quotation_Sent' | 'Lost' | 'Won';
+  assigned_to_caller_id?: string; // Telecaller Profile ID mapping
+  assigned_to_name?: string;     // Telecaller Name for easy rendering
+  remarks?: string;
+  next_followup_date?: string;  // "YYYY-MM-DD" for dashboard alarms
+  logs: LeadActivityLog[];       // Audit log timeline matrix
   created_at: string;
 }

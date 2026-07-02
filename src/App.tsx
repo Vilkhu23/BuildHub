@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { DatabaseState, Profile, DailyPayment, PurchaseOrder, MaterialStock, Project, InboundRevenue, OfficeExpense, DealAdjustment, Property, BuyerRequirement, Client, Lead, TenantProfile } from "./types";
+import { DatabaseState, Profile, DailyPayment, PurchaseOrder, MaterialStock, Project, InboundRevenue, OfficeExpense, DealAdjustment, Property, BuyerRequirement, Client, Lead, TenantProfile, CRMLead } from "./types";
 
 // Import modular screens
 import Navigation from "./components/Navigation";
@@ -13,6 +13,11 @@ import SettingsView from "./components/SettingsView";
 import ClientEstimatePortal from "./components/ClientEstimatePortal";
 import SubscriptionGate from "./components/SubscriptionGate";
 import LeadsView from "./components/LeadsView";
+import CRMLeadHub from "./components/CRMLeadHub";
+import OnboardingWizard from "./components/OnboardingWizard";
+import WhatsAppTemplateEditor from "./components/WhatsAppTemplateEditor";
+import { triggerWhatsAppNotifications } from "./lib/whatsappLeadTrigger";
+import { allocateLead, CRMLeadEngine } from "./lib/CRMLeadEngine";
 
 // Import Firebase Client Integration
 import { auth, googleProvider, db as firestoreDb } from "./lib/firebase";
@@ -109,6 +114,10 @@ export default function App() {
   const [sharedError, setSharedError] = useState<string | null>(null);
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [selectedProjectIdForEstimates, setSelectedProjectIdForEstimates] = useState<string>("");
+  const [isOnboardingWizardOpen, setIsOnboardingWizardOpen] = useState(false);
+  const [activeMockTenant, setActiveMockTenant] = useState<TenantProfile | null>(null);
+  const [isSettingsDropdownOpen, setIsSettingsDropdownOpen] = useState(false);
+  const [activeLeadSubTab, setActiveLeadSubTab] = useState<'hub' | 'kanban' | 'whatsapp'>("hub");
 
   const addActivityLog = (message: string) => {
     setActivityLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${message}`, ...prev.slice(0, 19)]);
@@ -143,6 +152,19 @@ export default function App() {
       fetchSharedEstimate();
     }
   }, []);
+
+  // Automatically trigger onboarding wizard for new tenants with unconfigured profiles
+  useEffect(() => {
+    if (db && db.tenant_profiles) {
+      const activeTP = db.tenant_profiles.find(tp => tp.tenant_id === (user?.uid || "owner-1")) || db.tenant_profiles[0];
+      const uidKey = user?.uid || "owner-1";
+      const hasCompletedOnboarding = localStorage.getItem(`onboarding_completed_${uidKey}`);
+      
+      if (activeTP && activeTP.company_name === "BuildEstimate Inc." && !hasCompletedOnboarding) {
+        setIsOnboardingWizardOpen(true);
+      }
+    }
+  }, [db, user]);
 
   // Save document to specified company subcollection
   const saveDocument = async (subcollection: string, id: string, data: any) => {
@@ -193,7 +215,8 @@ export default function App() {
               { key: "deal_adjustments", path: "deal_adjustments" },
               { key: "alerts", path: "alerts" },
               { key: "tenant_profiles", path: "tenant_profiles" },
-              { key: "leads", path: "crm_leads" }
+              { key: "leads", path: "crm_leads" },
+              { key: "crm_leads", path: "construction_inquiries" }
             ];
 
             const loadPromises = collectionsToLoad.map(async (col) => {
@@ -251,7 +274,8 @@ export default function App() {
                 { key: "buyer_requirements", path: "leads" },
                 { key: "vendors", path: "vendors" },
                 { key: "office_expenses", path: "office_expenses" },
-                { key: "leads", path: "crm_leads" }
+                { key: "leads", path: "crm_leads" },
+                { key: "crm_leads", path: "construction_inquiries" }
               ];
 
               for (const col of collectionsToClear) {
@@ -523,6 +547,91 @@ export default function App() {
     setCurrentTab("estimates");
   };
 
+  // CRM Construction Inquiries Handlers
+  const handleAddCRMLead = async (leadData: Omit<CRMLead, "id" | "created_at" | "tenant_id">) => {
+    if (!db) return;
+    
+    // Create initial raw lead structure
+    const rawLead: CRMLead = {
+      ...leadData,
+      id: "crm-" + (((db as any).crm_leads || []).length + 1) + "-" + Math.floor(Math.random() * 1000),
+      tenant_id: user?.uid || "owner-1",
+      created_at: new Date().toISOString()
+    };
+
+    // Perform sequential Round-Robin Allocation to active Telecallers
+    const allocatedLead = allocateLead(rawLead, db.profiles || []);
+
+    const updatedDb: DatabaseState = {
+      ...db,
+      crm_leads: [...((db as any).crm_leads || []), allocatedLead]
+    };
+    syncWithServer(updatedDb);
+    addActivityLog(`CRM Lead Hub: Added new inquiry for "${allocatedLead.customer_name}" successfully.`);
+
+    // Trigger static notification trigger
+    triggerWhatsAppNotifications(allocatedLead, {
+      onAddLog: (msg) => {
+        addActivityLog(msg);
+      }
+    });
+
+    // Trigger WhatsApp Allocation template dispatches to Telecaller & Buyer
+    CRMLeadEngine.dispatchWhatsAppStubs(allocatedLead, undefined, undefined, (msg) => {
+      addActivityLog(msg);
+    });
+
+    if (user) {
+      await saveDocument("construction_inquiries", allocatedLead.id, allocatedLead);
+    }
+  };
+
+  const handleUpdateCRMLead = async (leadId: string, updates: Partial<CRMLead>) => {
+    if (!db) return;
+    const updatedCRMLeads = ((db as any).crm_leads || []).map((l: CRMLead) => 
+      l.id === leadId ? { ...l, ...updates } : l
+    );
+    const updatedDb: DatabaseState = {
+      ...db,
+      crm_leads: updatedCRMLeads
+    };
+    syncWithServer(updatedDb);
+    
+    if (updates.lead_status) {
+      addActivityLog(`CRM Lead Hub: Updated inquiry status to "${updates.lead_status.replace('_', ' ')}".`);
+    }
+    if (updates.remarks !== undefined) {
+      addActivityLog(`CRM Lead Hub: Updated remarks for inquiry.`);
+    }
+
+    if (user) {
+      const activeCRMLead = updatedCRMLeads.find((l: CRMLead) => l.id === leadId);
+      if (activeCRMLead) {
+        await saveDocument("construction_inquiries", leadId, activeCRMLead);
+      }
+    }
+  };
+
+  const handleDeleteCRMLead = async (leadId: string) => {
+    if (!db) return;
+    const updatedCRMLeads = ((db as any).crm_leads || []).filter((l: CRMLead) => l.id !== leadId);
+    const updatedDb: DatabaseState = {
+      ...db,
+      crm_leads: updatedCRMLeads
+    };
+    syncWithServer(updatedDb);
+    addActivityLog(`CRM Lead Hub: Deleted inquiry.`);
+
+    if (user) {
+      try {
+        const docRef = doc(firestoreDb, "companies", user.uid, "construction_inquiries", leadId);
+        await deleteDoc(docRef);
+      } catch (err) {
+        console.error("Error deleting from cloud:", err);
+      }
+    }
+  };
+
   // Handler for adding a new client
   const handleAddClient = async (clientData: Omit<Client, "id">) => {
     if (!db) return;
@@ -753,6 +862,49 @@ export default function App() {
     }
   };
 
+  const handleUpdateTenantProfile = async (updatedFields: Partial<TenantProfile>) => {
+    if (!db) return;
+    const updatedProfile = {
+      ...activeTenantProfile,
+      ...updatedFields
+    };
+
+    if (activeMockTenant) {
+      setActiveMockTenant(updatedProfile);
+    }
+
+    if (user) {
+      await setDoc(
+        doc(firestoreDb, "companies", user.uid, "tenant_profiles", activeTenantProfile.id || "tp-default"),
+        sanitizeFirestoreData(updatedProfile)
+      );
+    }
+
+    setDb(prev => {
+      if (!prev) return null;
+      const tps = prev.tenant_profiles || [];
+      const exists = tps.some(tp => tp.id === activeTenantProfile.id);
+      const updatedTps = exists
+        ? tps.map(tp => tp.id === activeTenantProfile.id ? updatedProfile : tp)
+        : [...tps, { ...updatedProfile, id: activeTenantProfile.id || "tp-default" }];
+      return {
+        ...prev,
+        tenant_profiles: updatedTps
+      };
+    });
+  };
+
+  const handleSimulateSubscription = (mockTenant: TenantProfile) => {
+    setActiveMockTenant(mockTenant);
+    setIsOnboardingWizardOpen(true);
+    addActivityLog(`Simulation: Subscribed successfully with Partition ID ${mockTenant.tenant_id}. Onboarding Wizard triggered.`);
+  };
+
+  const handleCancelSimulation = () => {
+    setActiveMockTenant(null);
+    addActivityLog("Simulation: Cancelled subscription simulation. Restored default tenant profile state.");
+  };
+
   const handleResetDatabase = async () => {
     if (!db) return;
     addActivityLog("Initiating database purge to a clean, blank slate...");
@@ -891,7 +1043,7 @@ export default function App() {
     );
   }
 
-  const activeTenantProfile = db.tenant_profiles?.find(
+  const activeTenantProfile = activeMockTenant || db.tenant_profiles?.find(
     (tp) => tp.tenant_id === (user?.uid || "owner-1")
   ) || db.tenant_profiles?.[0] || {
     id: "tp-fallback",
@@ -915,6 +1067,9 @@ export default function App() {
         user={user}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
+        tenantProfile={activeTenantProfile}
+        onOpenCompanyProfile={() => setIsOnboardingWizardOpen(true)}
+        onOpenSubscriptionDetails={() => setIsSubscriptionModalOpen(true)}
         filterNavigationLinks={filterNavigationLinks}
       />
 
@@ -934,7 +1089,14 @@ export default function App() {
               dealAdjustments={db.deal_adjustments || []}
               vendors={db.vendors || []}
               userRole={activeRole}
-              setTab={setCurrentTab}
+              setTab={(tab) => {
+                if (tab === "crm_leads") {
+                  setCurrentTab("leads");
+                  setActiveLeadSubTab("hub");
+                } else {
+                  setCurrentTab(tab);
+                }
+              }}
               onOpenOrderDialog={(stockId) => {
                 setCurrentTab("materials");
               }}
@@ -948,6 +1110,10 @@ export default function App() {
               onAddClient={handleAddClient}
               tenantProfile={activeTenantProfile}
               onOpenUpgradeModal={() => setIsSubscriptionModalOpen(true)}
+              onOpenOnboardingWizard={() => setIsOnboardingWizardOpen(true)}
+              onSimulateSubscription={handleSimulateSubscription}
+              onCancelSimulation={handleCancelSimulation}
+              onAddLog={addActivityLog}
             />
           )}
 
@@ -1006,17 +1172,71 @@ export default function App() {
           )}
 
           {currentTab === "leads" && (
-            <LeadsView
-              leads={db.leads || []}
-              clients={db.clients || []}
-              projects={db.projects || []}
-              tenantProfile={activeTenantProfile}
-              activeRole={activeRole}
-              onAddLead={handleAddLead}
-              onUpdateLeadStatus={handleUpdateLeadStatus}
-              onConvertLeadToEstimate={handleConvertLeadToEstimate}
-              onOpenUpgradeModal={() => setIsSubscriptionModalOpen(true)}
-            />
+            <div className="space-y-6">
+              {/* Modern Segment Control sub-menu */}
+              <div className="flex border-b border-slate-200">
+                <button
+                  onClick={() => setActiveLeadSubTab("hub")}
+                  className={`flex items-center gap-2 pb-3 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                    activeLeadSubTab === "hub"
+                      ? "border-emerald-600 text-emerald-700 font-extrabold"
+                      : "border-transparent text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">hub</span>
+                  CRM Inquiry Hub
+                </button>
+                <button
+                  onClick={() => setActiveLeadSubTab("kanban")}
+                  className={`flex items-center gap-2 pb-3 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                    activeLeadSubTab === "kanban"
+                      ? "border-emerald-600 text-emerald-700 font-extrabold"
+                      : "border-transparent text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">view_week</span>
+                  Pipeline Board (Karam AI)
+                </button>
+                <button
+                  onClick={() => setActiveLeadSubTab("whatsapp")}
+                  className={`flex items-center gap-2 pb-3 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                    activeLeadSubTab === "whatsapp"
+                      ? "border-emerald-600 text-emerald-700 font-extrabold"
+                      : "border-transparent text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">chat</span>
+                  WhatsApp Templates (Karam AI)
+                </button>
+              </div>
+
+              {activeLeadSubTab === "hub" ? (
+                <CRMLeadHub
+                  crmLeads={(db as any).crm_leads || []}
+                  tenantProfile={activeTenantProfile}
+                  activeRole={activeRole}
+                  profiles={db.profiles}
+                  onAddCRMLead={handleAddCRMLead}
+                  onUpdateCRMLead={handleUpdateCRMLead}
+                  onDeleteCRMLead={handleDeleteCRMLead}
+                  onOpenUpgradeModal={() => setIsSubscriptionModalOpen(true)}
+                />
+              ) : activeLeadSubTab === "kanban" ? (
+                <LeadsView
+                  leads={db.leads || []}
+                  clients={db.clients || []}
+                  projects={db.projects || []}
+                  tenantProfile={activeTenantProfile}
+                  activeRole={activeRole}
+                  onAddLead={handleAddLead}
+                  onUpdateLeadStatus={handleUpdateLeadStatus}
+                  onConvertLeadToEstimate={handleConvertLeadToEstimate}
+                  onOpenUpgradeModal={() => setIsSubscriptionModalOpen(true)}
+                />
+              ) : (
+                <WhatsAppTemplateEditor />
+              )}
+            </div>
           )}
 
           {currentTab === "settings" && (
@@ -1083,6 +1303,18 @@ export default function App() {
           addActivityLog(`Billing: Successfully upgraded subscription to "${newPlan}" tier!`);
           setIsSubscriptionModalOpen(false);
         }}
+      />
+
+      <OnboardingWizard
+        isOpen={isOnboardingWizardOpen}
+        onClose={() => {
+          setIsOnboardingWizardOpen(false);
+          localStorage.setItem(`onboarding_completed_${user?.uid || "owner-1"}`, "true");
+        }}
+        tenantProfile={activeTenantProfile}
+        onUpdateTenantProfile={handleUpdateTenantProfile}
+        onResetDatabase={handleResetDatabase}
+        onAddLog={addActivityLog}
       />
     </div>
   );

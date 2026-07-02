@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Project, CriticalAlert, Profile, InboundRevenue, DailyPayment, OfficeExpense, DealAdjustment, Vendor, Client, TenantProfile } from "../types";
 import DashboardSummaryCard from "./DashboardSummaryCard";
+import SettingsPanel from "./SettingsPanel";
 import { checkProjectLimit } from "../utils/subscription";
 import {
   ResponsiveContainer,
@@ -36,6 +37,10 @@ interface DashboardViewProps {
   onAddClient?: (client: Omit<Client, "id">) => void;
   tenantProfile: TenantProfile;
   onOpenUpgradeModal: () => void;
+  onOpenOnboardingWizard: () => void;
+  onSimulateSubscription?: (mockTenant: TenantProfile) => void;
+  onCancelSimulation?: () => void;
+  onAddLog?: (message: string) => void;
 }
 
 export default function DashboardView({
@@ -61,11 +66,18 @@ export default function DashboardView({
   onAddClient,
   tenantProfile,
   onOpenUpgradeModal,
+  onOpenOnboardingWizard,
+  onSimulateSubscription,
+  onCancelSimulation,
+  onAddLog,
 }: DashboardViewProps) {
   const isOwnerOrManager = userRole === "Owner" || userRole === "Manager";
 
+  // State to control inline settings dropdown panel in dashboard header
+  const [isSettingsDropdownOpen, setIsSettingsDropdownOpen] = useState(false);
+
   // Active sub-tab state for projects on the dashboard
-  const [activeProjectTab, setActiveProjectTab] = useState<'approved' | 'quotations'>('approved');
+  const [activeProjectTab, setActiveProjectTab] = useState<'approved' | 'quotations' | 'leads'>('approved');
 
   // Ledger active tab state
   const [activeLedgerTab, setActiveLedgerTab] = useState<'cash_in' | 'payments' | 'office' | 'deals'>('cash_in');
@@ -501,6 +513,33 @@ export default function DashboardView({
           <span className="hidden sm:inline-block bg-slate-800 text-slate-300 text-[9px] px-2 py-1 rounded-md font-bold uppercase tracking-wider border border-slate-700/60 flex-shrink-0">
             👑 {userRole}
           </span>
+
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={() => setIsSettingsDropdownOpen(!isSettingsDropdownOpen)}
+              className="h-9 w-9 bg-slate-800 border border-slate-700 text-slate-300 hover:text-white rounded-xl flex items-center justify-center transition-all cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-lg">settings</span>
+            </button>
+
+            {isSettingsDropdownOpen && (
+              <div className="absolute right-0 mt-3 bg-white text-slate-900 border border-slate-200 rounded-2xl shadow-2xl p-4 w-[320px] md:w-[420px] z-[200]">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
+                  <h4 className="text-xs font-black uppercase tracking-tight text-slate-800">Settings Panel</h4>
+                  <button onClick={() => setIsSettingsDropdownOpen(false)} className="text-slate-400 hover:text-slate-700 text-xs">✕</button>
+                </div>
+                <div className="max-h-[350px] overflow-y-auto">
+                  <SettingsPanel
+                    tenantProfile={tenantProfile}
+                    onOpenOnboardingWizard={onOpenOnboardingWizard}
+                    onCancelSimulation={onCancelSimulation}
+                    onSimulateSubscription={onSimulateSubscription}
+                    onAddLog={onAddLog}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
           <div className="relative flex-shrink-0">
             <select
               id="project-select-dropdown"
@@ -581,13 +620,9 @@ export default function DashboardView({
           })()
         )}
 
-      <DashboardSummaryCard
-        projects={activeProjectsList}
-        inboundRevenues={filteredInboundRevenues}
-        dailyPayments={filteredDailyPayments}
-        officeExpenses={officeExpenses}
-        vendors={vendors}
-      />
+
+
+
 
       {/* Role-Based Security Enforcement Warning Block for Supervisors & Telecallers */}
       {!isOwnerOrManager ? (
@@ -615,46 +650,33 @@ export default function DashboardView({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Net Profit Card */}
-              <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-slate-500 font-semibold text-xs uppercase tracking-wide">Net Profit</span>
-                  <span className="material-symbols-outlined text-emerald-600 font-bold" style={{ fontVariationSettings: "'FILL' 1" }}>trending_up</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">{formatLakhsCrores(netProfitVal)}</span>
-                  <div className="inline-flex items-center gap-1 mt-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full w-fit border border-emerald-200">
-                    <span className="material-symbols-outlined text-[10px] font-bold">info</span>
-                    <span className="text-[10px] font-bold">Project margins & deal commissions minus HQ expenses</span>
-                  </div>
-                </div>
+            {/* 📊 Centralized Financial Metrics Grid Stripe */}
+            <section className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in">
+              {/* Card 1: Net Profit */}
+              <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 shadow-sm">
+                <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block">Net Profit</span>
+                <span className="text-xl font-black tracking-tight mt-1 block">{formatLakhsCrores(netProfitVal)}</span>
+                <span className="text-[9px] text-emerald-400 font-bold mt-1 block">Margin: {projectedMarginVal.toFixed(1)}%</span>
               </div>
 
-              {/* Cash Reserves Card */}
-              <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-slate-500 font-semibold text-xs uppercase tracking-wide">Cash Reservoir</span>
-                  <span className="material-symbols-outlined text-slate-500">account_balance_wallet</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">{formatLakhsCrores(actualCashReservoirVal)}</span>
-                  <p className="text-[10px] text-slate-500 mt-1.5 font-semibold">Inflow receipts + broker commissions minus all paid site log outflows</p>
-                </div>
+              {/* Card 2: Cash Reservoir */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <span className="text-slate-500 font-bold text-[10px] uppercase tracking-wider block">Cash Reservoir</span>
+                <span className="text-xl font-black text-slate-900 tracking-tight mt-1 block">{formatLakhsCrores(actualCashReservoirVal)}</span>
               </div>
 
-              {/* Pending Collections Card */}
-              <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-slate-500 font-semibold text-xs uppercase tracking-wide">Pending Collections</span>
-                  <span className="material-symbols-outlined text-slate-500">pending_actions</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">{formatLakhsCrores(pendingCollectionsVal)}</span>
-                  <p className="text-[10px] text-slate-500 mt-1.5 font-medium">{projects.length > 0 ? "Contract budget remaining to collect on filtered sites" : "No active projects"}</p>
-                </div>
+              {/* Card 3: Contract Value */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <span className="text-slate-500 font-bold text-[10px] uppercase tracking-wider block">Contract Value</span>
+                <span className="text-xl font-black text-slate-900 tracking-tight mt-1 block">{formatINR(totalBudget)}</span>
               </div>
-            </div>
+
+              {/* Card 4: Pending Collections */}
+              <div className="bg-rose-50 p-4 rounded-xl border border-rose-100 shadow-sm">
+                <span className="text-rose-700 font-bold text-[10px] uppercase tracking-wider block">Pending Collections</span>
+                <span className="text-xl font-black text-rose-900 tracking-tight mt-1 block">{formatLakhsCrores(pendingCollectionsVal)}</span>
+              </div>
+            </section>
 
             {/* Bayana Countdown Engine Panel */}
             {activeBayanaAlert && (
@@ -1011,7 +1033,7 @@ export default function DashboardView({
       </section>
 
       {/* Quick Actions (Full Mobile Targets) */}
-      <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <section className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <button
           onClick={() => setTab("estimates")}
           className="h-12 flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl active:scale-[0.98] transition-all shadow-sm"
@@ -1051,6 +1073,13 @@ export default function DashboardView({
             Add New Client
           </button>
         )}
+        <button
+          onClick={() => setTab("crm_leads")}
+          className="h-12 flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl active:scale-[0.98] transition-all shadow-sm animate-fade-in col-span-2 md:col-span-1"
+        >
+          <span className="material-symbols-outlined text-lg">leaderboard</span>
+          CRM Leads Hub
+        </button>
       </section>
 
       {/* Middle Grid: Active Projects & Staff List */}
@@ -1105,6 +1134,16 @@ export default function DashboardView({
               }`}
             >
               Estimates & Quotes ({projects.filter(p => p.status === "Quotation" || p.status === "Dead").length})
+            </button>
+            <button
+              onClick={() => setActiveProjectTab('leads')}
+              className={`pb-2 px-3 text-xs font-bold border-b-2 uppercase tracking-wide transition-all ${
+                activeProjectTab === 'leads'
+                  ? 'border-slate-900 text-slate-900 font-extrabold'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              CRM Inquiries
             </button>
           </div>
 
@@ -1266,7 +1305,7 @@ export default function DashboardView({
                   </div>
                 ))
               )
-            ) : (
+            ) : activeProjectTab === 'quotations' ? (
               projects.filter(p => p.status === "Quotation" || p.status === "Dead").length === 0 ? (
                 <div className="bg-white border border-slate-200 border-dashed p-10 rounded-xl text-center space-y-3">
                   <span className="material-symbols-outlined text-slate-400 text-4xl">receipt_long</span>
@@ -1370,6 +1409,34 @@ export default function DashboardView({
                   </div>
                 ))
               )
+            ) : (
+              // Lead Management Conditional Block Trigger
+              <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl p-6 border border-slate-800 shadow-md relative overflow-hidden flex flex-col md:flex-row justify-between items-center gap-4 animate-fade-in">
+                <div className="absolute -top-10 -right-10 p-4 opacity-5 pointer-events-none">
+                  <span className="material-symbols-outlined text-9xl text-white">hub</span>
+                </div>
+                <div className="space-y-1.5 text-center md:text-left">
+                  <div className="inline-flex items-center gap-1.5 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400">
+                      Ecosystem: CRM Lead Integration
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-black uppercase tracking-tight leading-none text-white flex items-center justify-center md:justify-start gap-1.5">
+                    <span>Manage CRM Leads & Inquiries</span>
+                  </h3>
+                  <p className="text-[10px] md:text-xs text-slate-300 font-semibold max-w-lg leading-normal">
+                    Track incoming construction project and material supply inquiries, update statuses, and convert them to quotations.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setTab("crm_leads")}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all shadow-md shrink-0 flex items-center gap-2 font-black"
+                >
+                  <span className="material-symbols-outlined text-sm font-bold">leaderboard</span>
+                  <span>Open CRM Lead Hub</span>
+                </button>
+              </div>
             )}
           </div>
         </section>

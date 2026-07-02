@@ -1,5 +1,6 @@
 import React from "react";
-import { Profile } from "../types";
+import { Profile, TenantProfile } from "../types";
+import ProfileSettingsDropdown from "./ProfileSettingsDropdown";
 
 interface NavigationProps {
   currentTab: string;
@@ -10,6 +11,9 @@ interface NavigationProps {
   user: any;
   onSignIn: () => void;
   onSignOut: () => void;
+  tenantProfile: TenantProfile;
+  onOpenCompanyProfile: () => void;
+  onOpenSubscriptionDetails: () => void;
   filterNavigationLinks?: (
     role: 'Owner' | 'Manager' | 'Supervisor' | 'Telecaller',
     items: Array<{ id: string; label: string; icon: string; roles: string[] }>
@@ -25,6 +29,9 @@ export default function Navigation({
   user,
   onSignIn,
   onSignOut,
+  tenantProfile,
+  onOpenCompanyProfile,
+  onOpenSubscriptionDetails,
   filterNavigationLinks,
 }: NavigationProps) {
   // Get active role user avatar/profile
@@ -120,32 +127,13 @@ export default function Navigation({
 
             {/* Profile / Auth Area */}
             {user ? (
-              <div className="flex items-center gap-1.5 md:gap-3">
-                <div className="text-right hidden sm:block">
-                  <p className="text-[11px] font-black text-slate-900 leading-none truncate max-w-[100px]">{user.displayName || "User"}</p>
-                  <p className="text-[9px] text-slate-400 font-bold mt-0.5 truncate max-w-[100px]">{user.email}</p>
-                </div>
-                <div className="relative shrink-0">
-                  <div className="h-8 w-8 overflow-hidden rounded-full border border-slate-200 bg-slate-100 shadow-xs flex items-center justify-center">
-                    {user.photoURL ? (
-                      <img src={user.photoURL} alt="profile" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="material-symbols-outlined text-slate-500 text-base">
-                        person
-                      </span>
-                    )}
-                  </div>
-                  <div className="absolute bottom-0 right-0 h-2 w-2 rounded-full border border-white bg-emerald-500" />
-                </div>
-                <button
-                  onClick={onSignOut}
-                  title="Sign out of Google"
-                  className="h-8 w-8 sm:w-auto sm:px-2.5 bg-slate-50 hover:bg-red-50 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-lg text-[9px] font-black uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center"
-                >
-                  <span className="sm:hidden material-symbols-outlined text-sm">logout</span>
-                  <span className="hidden sm:inline">Sign Out</span>
-                </button>
-              </div>
+              <ProfileSettingsDropdown
+                user={user}
+                tenantProfile={tenantProfile}
+                onOpenCompanyProfile={onOpenCompanyProfile}
+                onOpenSubscriptionDetails={onOpenSubscriptionDetails}
+                onSignOut={onSignOut}
+              />
             ) : (
               <button
                 onClick={onSignIn}
