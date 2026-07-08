@@ -1,37 +1,20 @@
-import express from "express";
-import path from "path";
-import { createServer as createViteServer } from "vite";
-import aiRouter from "./routes/ai";
-import dbRouter from "./routes/db";
+import { createApp } from './app/create-app.js';
+import { appConfig } from './config/app-config.js';
 
-const PORT = 3000;
+const app = createApp();
 
-async function startServer() {
-  const app = express();
-  app.use(express.json());
+const server = app.listen(appConfig.port, () => {
+  console.log(`\n🚀 BuildEstimate BOS active locally on port: http://localhost:${appConfig.port}`);
+});
 
-  // Mount API routers
-  app.use("/api/db", dbRouter);
-  app.use("/api", aiRouter);
-
-  // Vite Integration
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`BuildEstimate BOS running at http://localhost:${PORT}`);
+// Clean Graceful Shutdown Engine Handling
+const shutdown = () => {
+  console.log("\n🛑 [SHUTDOWN TRIGGERED]: Closing HTTP connections safely...");
+  server.close(() => {
+    console.log("🏁 [SERVER CLOSED]: Process terminated cleanly.\n");
+    process.exit(0);
   });
-}
+};
 
-startServer();
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
