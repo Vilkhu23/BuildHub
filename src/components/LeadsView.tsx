@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Lead, Client, Project, TenantProfile } from "../types";
+import { validatePhoneNumber } from "../lib/validation";
 
 interface LeadsViewProps {
   leads: Lead[];
@@ -34,6 +35,7 @@ export default function LeadsView({
   const [status, setStatus] = useState<'New' | 'Quoted' | 'Follow-up'>("New");
 
   const [filterSource, setFilterSource] = useState<string>("All");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const plan = tenantProfile?.subscription_plan || "Free Trial";
   const isProOrEnterprise = plan === "Pro Growth" || plan === "Enterprise Matrix";
@@ -41,6 +43,11 @@ export default function LeadsView({
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientName.trim() || !phoneNumber.trim() || !location.trim()) return;
+
+    const validation = validatePhoneNumber(phoneNumber);
+    if (!validation.isValid) {
+      return;
+    }
 
     onAddLead({
       client_name: clientName.trim(),
@@ -93,9 +100,15 @@ export default function LeadsView({
     }
   ];
 
-  const filteredLeads = activeLeads.filter(
-    (lead) => filterSource === "All" || lead.source === filterSource
-  );
+  const filteredLeads = activeLeads.filter((lead) => {
+    const matchesSource = filterSource === "All" || lead.source === filterSource;
+    const matchesSearch = 
+      lead.client_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      lead.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      lead.phone_number.includes(searchQuery) ||
+      (lead.project_id || "").toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSource && matchesSearch;
+  });
 
   const leadsByStatus = {
     "New": filteredLeads.filter((l) => l.status === "New"),
@@ -271,9 +284,23 @@ export default function LeadsView({
 
       {/* Filter and pipeline layout */}
       <div className="space-y-4">
-        {/* Source Filter Tabs */}
-        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+          {/* Search Input */}
+          <div className="relative w-full md:w-80">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+              <span className="material-symbols-outlined text-sm font-bold">search</span>
+            </span>
+            <input
+              type="text"
+              placeholder="Search client, location, or Project ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-10 pl-9 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+          </div>
+
+          {/* Source Filter Tabs */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto">
             {["All", "Meta Ads", "WhatsApp", "Google Search", "Referral"].map((src) => (
               <button
                 key={src}
@@ -288,9 +315,6 @@ export default function LeadsView({
               </button>
             ))}
           </div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono hidden md:inline">
-            Total Leads: {filteredLeads.length}
-          </span>
         </div>
 
         {/* CRM Pipeline Kanban Board */}
@@ -330,9 +354,16 @@ export default function LeadsView({
                         {/* Title & Badge */}
                         <div className="flex justify-between items-start gap-2">
                           <div className="space-y-0.5">
-                            <h4 className="text-xs font-bold text-slate-800 leading-tight">
-                              {lead.client_name}
-                            </h4>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h4 className="text-xs font-bold text-slate-800 leading-tight">
+                                {lead.client_name}
+                              </h4>
+                              {lead.project_id && (
+                                <span className="inline-flex items-center bg-slate-900 text-slate-100 text-[8px] font-mono font-bold px-1 py-0.5 rounded border border-slate-700 select-all" title="Unique Project ID (Primary Key)">
+                                  🔑 {lead.project_id}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[10px] font-semibold text-slate-400 font-mono">
                               {lead.phone_number}
                             </p>
@@ -424,8 +455,39 @@ export default function LeadsView({
                   placeholder="e.g., +91 99887 76655"
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
-                  className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className={`w-full h-11 px-4 bg-slate-50 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 transition-all ${
+                    phoneNumber.trim() 
+                      ? (validatePhoneNumber(phoneNumber).isValid 
+                        ? "border-emerald-500 focus:ring-emerald-500" 
+                        : "border-rose-500 focus:ring-rose-500")
+                      : "border-slate-200 focus:ring-emerald-500"
+                  }`}
                 />
+                {phoneNumber.trim() && (() => {
+                  const res = validatePhoneNumber(phoneNumber);
+                  if (!res.isValid) {
+                    return (
+                      <p className="text-[10px] text-rose-600 font-bold mt-1 flex items-center gap-1 leading-none">
+                        <span className="material-symbols-outlined text-[12px] font-bold">cancel</span>
+                        {res.error}
+                      </p>
+                    );
+                  } else if (res.warning) {
+                    return (
+                      <p className="text-[10px] text-amber-600 font-bold mt-1 flex items-center gap-1 leading-none">
+                        <span className="material-symbols-outlined text-[12px] font-bold">warning</span>
+                        {res.warning}
+                      </p>
+                    );
+                  } else {
+                    return (
+                      <p className="text-[10px] text-emerald-600 font-bold mt-1 flex items-center gap-1 leading-none">
+                        <span className="material-symbols-outlined text-[12px] font-bold">check_circle</span>
+                        Valid.
+                      </p>
+                    );
+                  }
+                })()}
               </div>
 
               <div className="space-y-1">

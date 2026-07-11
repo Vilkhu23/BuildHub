@@ -25,6 +25,8 @@ interface SharedEstimate {
   grand_total: number;
   created_at: string;
   subscription_plan?: 'Free Trial' | 'Pro Growth' | 'Enterprise Matrix';
+  project_id?: string;
+  revision_number?: number;
 }
 
 interface ClientEstimatePortalProps {
@@ -171,7 +173,8 @@ export default function ClientEstimatePortal({ estimate }: ClientEstimatePortalP
                 Commercial Proposal Snapshot
               </span>
               <div className="pt-2 text-xs text-slate-500 space-y-0.5 font-mono">
-                <p><strong className="text-slate-700">Proposal ID:</strong> {estimate.id}</p>
+                {estimate.project_id && <p><strong className="text-slate-700">Project ID:</strong> {estimate.project_id}</p>}
+                <p><strong className="text-slate-700">Proposal ID:</strong> {estimate.id}{estimate.revision_number ? `-R${estimate.revision_number}` : ""}</p>
                 <p><strong className="text-slate-700">Date Published:</strong> {new Date(created_at).toLocaleDateString('en-IN')}</p>
                 <p><strong className="text-slate-700">Valid Until:</strong> {new Date(new Date(created_at).getTime() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN')}</p>
               </div>

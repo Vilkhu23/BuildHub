@@ -21,13 +21,15 @@ interface MobileLeadCardProps {
   profiles: Profile[];
   onUpdateLead: (leadId: string, updates: Partial<CRMLead>) => void;
   onAddLog?: (message: string) => void;
+  activeRole?: string;
 }
 
 export default function MobileLeadCard({ 
   lead, 
   profiles, 
   onUpdateLead, 
-  onAddLog 
+  onAddLog,
+  activeRole = "Telecaller"
 }: MobileLeadCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditingRemarks, setIsEditingRemarks] = useState(false);
@@ -58,37 +60,63 @@ export default function MobileLeadCard({
   const handleTransfer = (newCallerId: string) => {
     const selectedCaller = profiles.find(p => p.id === newCallerId);
     if (selectedCaller) {
+      const currentLogs = lead.logs || [];
+      const newLog = {
+        id: `log_assign_${Date.now()}`,
+        performed_by: activeRole,
+        action: `Lead "${lead.customer_name}" transferred to ${selectedCaller.name}`,
+        timestamp: new Date().toISOString()
+      };
       onUpdateLead(lead.id, {
         assigned_to_caller_id: selectedCaller.id,
-        assigned_to_name: selectedCaller.name
+        assigned_to_name: selectedCaller.name,
+        logs: [newLog, ...currentLogs]
       });
-      if (onAddLog) {
-        onAddLog(`Lead "${lead.customer_name}" transferred to ${selectedCaller.name}`);
-      }
     }
   };
 
   const handleSaveRemarks = () => {
-    onUpdateLead(lead.id, { remarks: tempRemarks });
+    const currentLogs = lead.logs || [];
+    const newLog = {
+      id: `log_remark_${Date.now()}`,
+      performed_by: activeRole,
+      action: `Updated remarks for "${lead.customer_name}": ${tempRemarks || "Cleared"}`,
+      timestamp: new Date().toISOString()
+    };
+    onUpdateLead(lead.id, { 
+      remarks: tempRemarks,
+      logs: [newLog, ...currentLogs]
+    });
     setIsEditingRemarks(false);
-    if (onAddLog) {
-      onAddLog(`Updated remarks for "${lead.customer_name}": ${tempRemarks || "Cleared"}`);
-    }
   };
 
   const handleSaveFollowup = () => {
-    onUpdateLead(lead.id, { next_followup_date: tempFollowup });
+    const currentLogs = lead.logs || [];
+    const newLog = {
+      id: `log_followup_${Date.now()}`,
+      performed_by: activeRole,
+      action: `Updated next follow-up date for "${lead.customer_name}": ${tempFollowup || "Cleared"}`,
+      timestamp: new Date().toISOString()
+    };
+    onUpdateLead(lead.id, { 
+      next_followup_date: tempFollowup || undefined,
+      logs: [newLog, ...currentLogs]
+    });
     setIsEditingFollowup(false);
-    if (onAddLog) {
-      onAddLog(`Updated next follow-up date for "${lead.customer_name}": ${tempFollowup || "Cleared"}`);
-    }
   };
 
   const handleStatusChange = (newStatus: CRMLead["lead_status"]) => {
-    onUpdateLead(lead.id, { lead_status: newStatus });
-    if (onAddLog) {
-      onAddLog(`Status of "${lead.customer_name}" updated to ${newStatus}`);
-    }
+    const currentLogs = lead.logs || [];
+    const newLog = {
+      id: `log_status_${Date.now()}`,
+      performed_by: activeRole,
+      action: `Status of "${lead.customer_name}" updated to ${newStatus}`,
+      timestamp: new Date().toISOString()
+    };
+    onUpdateLead(lead.id, { 
+      lead_status: newStatus,
+      logs: [newLog, ...currentLogs]
+    });
   };
 
   // Status Badge Themes matching dark slate look and colors
@@ -117,6 +145,11 @@ export default function MobileLeadCard({
             <h4 className="text-sm font-black tracking-tight text-white truncate max-w-[150px] sm:max-w-[200px]">
               {lead.customer_name}
             </h4>
+            {lead.project_id && (
+              <span className="bg-slate-950 text-slate-100 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border border-slate-800 select-all" title="Unique Project ID (Primary Key)">
+                🔑 {lead.project_id}
+              </span>
+            )}
             
             {/* Dynamic Badge */}
             {isOverdue ? (

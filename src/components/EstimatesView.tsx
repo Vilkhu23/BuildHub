@@ -1,7 +1,55 @@
 import React, { useState } from "react";
 import { Project, LineItem, Client, Vendor, TenantProfile } from "../types";
-import { db as firestoreDb } from "../lib/firebase";
+import { db as firestoreDb, auth } from "../lib/firebase";
 import { doc, collection, setDoc } from "firebase/firestore";
+import { validatePhoneNumber } from "../lib/validation";
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 interface EstimatesViewProps {
   projects: Project[];
@@ -101,6 +149,12 @@ export default function EstimatesView({ projects, clients = [], vendors = [], on
     e.preventDefault();
     if (!newClientName.trim() || !newClientPhone.trim()) return;
 
+    const validation = validatePhoneNumber(newClientPhone);
+    if (!validation.isValid) {
+      // Invalidate submit if phone is not valid
+      return;
+    }
+
     if (onAddClient) {
       onAddClient({
         name: newClientName.trim(),
@@ -178,6 +232,18 @@ export default function EstimatesView({ projects, clients = [], vendors = [], on
     setSelectedClientIdForAssignment(selectedProject?.client_id || "");
     setIsAssignModalOpen(true);
   };
+
+  // Auto-select newly added client in assignment modal dropdown
+  const prevClientsLength = React.useRef(clients.length);
+  React.useEffect(() => {
+    if (clients.length > prevClientsLength.current) {
+      const newestClient = clients[clients.length - 1];
+      if (newestClient) {
+        setSelectedClientIdForAssignment(newestClient.id);
+      }
+    }
+    prevClientsLength.current = clients.length;
+  }, [clients]);
 
   const handleOpenAddModal = (cat: "civil" | "electrical" | "finishes" | "interior_finishing") => {
     setTargetCategory(cat);
@@ -438,16 +504,26 @@ export default function EstimatesView({ projects, clients = [], vendors = [], on
     onAddLog(`Opened secure WhatsApp thread with phone +${phone} for project "${projName}".`);
   };
 
-  const handleGeneratePublicLink = async () => {
+  const handleGeneratePublicLink = async (mode?: 'overwrite' | 'new_revision') => {
     if (!selectedProject) return;
     setIsGeneratingLink(true);
     setLinkCopied(false);
+
+    let snapshotId = `ps-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    let nextRevision = selectedProject.revision_number || 0;
+
+    if (mode === 'overwrite' && selectedProject.generated_share_id) {
+      snapshotId = selectedProject.generated_share_id;
+    } else if (mode === 'new_revision') {
+      nextRevision = nextRevision + 1;
+    }
+
     try {
-      const snapshotId = `ps-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
       const snapshotRef = doc(firestoreDb, "public_estimates", snapshotId);
       
       const snapshotData = {
         id: snapshotId,
+        project_id: selectedProject.project_id || `BOS-PRJ-${selectedProject.id}`,
         project_name: selectedProject.project_name || "Active Project Site",
         company_name: companyName,
         business_logo_url: businessLogo || "",
@@ -462,15 +538,50 @@ export default function EstimatesView({ projects, clients = [], vendors = [], on
         gst_rate: gstPercent,
         grand_total: totalWithGst,
         subscription_plan: tenantProfile?.subscription_plan || "Free Trial",
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        revision_number: nextRevision
       };
       
       await setDoc(snapshotRef, snapshotData);
       setGeneratedShareId(snapshotId);
-      onAddLog(`Created a read-only estimate snapshot public_estimates/${snapshotId} for project "${selectedProject.project_name}".`);
+
+      let nextPastRevisions = [...(selectedProject.past_revisions || [])];
+      
+      if (!selectedProject.generated_share_id || mode === 'new_revision') {
+        if (!nextPastRevisions.some(r => r.share_id === snapshotId)) {
+          nextPastRevisions.push({
+            share_id: snapshotId,
+            revision: nextRevision,
+            date: new Date().toISOString()
+          });
+        }
+      } else if (mode === 'overwrite') {
+        nextPastRevisions = nextPastRevisions.map(r => 
+          r.share_id === snapshotId ? { ...r, date: new Date().toISOString() } : r
+        );
+      }
+
+      // Save back to project state
+      if (onUpdateProject) {
+        onUpdateProject({
+          ...selectedProject,
+          generated_share_id: snapshotId,
+          revision_number: nextRevision,
+          past_revisions: nextPastRevisions
+        });
+      }
+
+      if (mode === 'overwrite') {
+        onAddLog(`Overwrote existing shared estimate snapshot public_estimates/${snapshotId} with latest revisions.`);
+      } else if (mode === 'new_revision') {
+        onAddLog(`Published new revision R${nextRevision} as a new snapshot public_estimates/${snapshotId}.`);
+      } else {
+        onAddLog(`Created a read-only estimate snapshot public_estimates/${snapshotId} for project "${selectedProject.project_name}".`);
+      }
     } catch (err: any) {
       console.error("Error creating shared estimate:", err);
       onAddLog(`Failed to generate public shared link: ${err.message || err}`);
+      handleFirestoreError(err, OperationType.WRITE, `public_estimates/${snapshotId}`);
     } finally {
       setIsGeneratingLink(false);
     }
@@ -724,7 +835,8 @@ export default function EstimatesView({ projects, clients = [], vendors = [], on
       </div>
       <div class="quote-info">
         <span class="badge">Commercial Proposal</span>
-        <p style="margin-top: 10px;"><strong>Quote #:</strong> EST-${selectedProject?.id || '001'}</p>
+        <p style="margin-top: 8px;"><strong>Project ID:</strong> ${selectedProject?.project_id || 'BOS-PRJ-3001'}</p>
+        <p><strong>Quote #:</strong> EST-${selectedProject?.id || '001'}${selectedProject?.revision_number ? `-R${selectedProject.revision_number}` : ''}</p>
         <p style="color: #64748b;">Date: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
       </div>
     </div>
@@ -1821,10 +1933,11 @@ export default function EstimatesView({ projects, clients = [], vendors = [], on
                   <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-black px-2 py-0.5 rounded uppercase">
                     Commercial Proposal
                   </span>
-                  <p className="text-xs text-slate-600 mt-2">
-                    <span className="font-semibold">Quote #:</span> EST-{selectedProject?.id || '001'}
-                  </p>
-                  <p className="text-[10px] text-slate-500">
+                  <div className="text-xs text-slate-600 mt-2 space-y-0.5">
+                    <p><span className="font-semibold text-slate-900">Project ID:</span> {selectedProject?.project_id || 'BOS-PRJ-3001'}</p>
+                    <p><span className="font-semibold text-slate-900">Quote #:</span> EST-{selectedProject?.id || '001'}{selectedProject?.revision_number ? `-R${selectedProject.revision_number}` : ''}</p>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
                     Date: {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
                 </div>
@@ -1996,15 +2109,41 @@ export default function EstimatesView({ projects, clients = [], vendors = [], on
               </div>
 
               {/* ACTION 3: Public Shared Snapshot Link */}
-              <div className="border-t border-slate-200/60 pt-4">
-                <h4 className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-2.5 text-center flex items-center justify-center gap-1">
+              <div className="border-t border-slate-200/60 pt-4 space-y-3">
+                <h4 className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-1 text-center flex items-center justify-center gap-1">
                   <span className="material-symbols-outlined text-xs text-amber-500">public</span>
                   Client Shared Snapshot Portal
                 </h4>
 
-                {!generatedShareId ? (
+                {selectedProject.generated_share_id && !generatedShareId ? (
+                  <div className="space-y-2 bg-amber-50/50 border border-amber-200/60 p-3 rounded-xl text-center animate-fade-in">
+                    <p className="text-[10px] font-semibold text-amber-900 leading-relaxed">
+                      This project already has an active shared link. How would you like to handle your recent changes?
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      <button
+                        onClick={() => handleGeneratePublicLink('overwrite')}
+                        disabled={isGeneratingLink}
+                        className="h-9 px-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-slate-950 font-extrabold rounded-lg text-[9px] uppercase tracking-wider transition-all shadow-2xs flex justify-center items-center gap-1 active:scale-95 cursor-pointer"
+                        title="Keep the same share URL so your client can see the changes instantly upon refreshing"
+                      >
+                        <span className="material-symbols-outlined text-xs">sync</span>
+                        Update Current Link
+                      </button>
+                      <button
+                        onClick={() => handleGeneratePublicLink('new_revision')}
+                        disabled={isGeneratingLink}
+                        className="h-9 px-2 bg-slate-900 hover:bg-black disabled:bg-slate-300 text-white font-extrabold rounded-lg text-[9px] uppercase tracking-wider transition-all shadow-2xs flex justify-center items-center gap-1 active:scale-95 cursor-pointer"
+                        title="Create a separate share URL and increment the revision counter (e.g. R1, R2)"
+                      >
+                        <span className="material-symbols-outlined text-xs">history</span>
+                        New Revision Suffix
+                      </button>
+                    </div>
+                  </div>
+                ) : !generatedShareId ? (
                   <button
-                    onClick={handleGeneratePublicLink}
+                    onClick={() => handleGeneratePublicLink()}
                     disabled={isGeneratingLink}
                     className="w-full h-10 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-slate-950 font-extrabold rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-xs flex justify-center items-center gap-2 active:scale-95 cursor-pointer"
                   >
@@ -2049,8 +2188,52 @@ export default function EstimatesView({ projects, clients = [], vendors = [], on
                         onClick={() => setGeneratedShareId(null)}
                         className="text-[9px] text-slate-400 hover:text-slate-600 underline cursor-pointer"
                       >
-                        Generate New Snapshot
+                        Publish New Suffix
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Past Revisions List */}
+                {selectedProject.past_revisions && selectedProject.past_revisions.length > 0 && (
+                  <div className="bg-slate-100/70 border border-slate-200/60 rounded-xl p-3 space-y-2 text-[11px] animate-fade-in">
+                    <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[11px] text-slate-600">history</span>
+                      Published Revision Logs
+                    </div>
+                    <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-200/60">
+                      {selectedProject.past_revisions.map((rev, idx) => {
+                        const url = `${window.location.origin}${window.location.pathname}?share=${rev.share_id}`;
+                        return (
+                          <div key={rev.share_id} className="pt-1.5 first:pt-0 flex justify-between items-center gap-1.5 font-mono">
+                            <div className="truncate flex-1">
+                              <span className="bg-slate-200/80 text-slate-700 text-[9px] px-1.5 py-0.5 rounded font-bold mr-1.5">R{rev.revision}</span>
+                              <span className="text-slate-500 text-[10px]">{new Date(rev.date).toLocaleDateString('en-IN', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <a 
+                                href={url} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="text-slate-500 hover:text-slate-900 flex items-center p-1 bg-white hover:bg-slate-100 rounded-md border border-slate-200 shadow-2xs transition-all"
+                                title="Open Portal View"
+                              >
+                                <span className="material-symbols-outlined text-xs">open_in_new</span>
+                              </a>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(url);
+                                  onAddLog(`Copied link to Revision R${rev.revision} of Project "${selectedProject.project_name}".`);
+                                }}
+                                className="text-slate-500 hover:text-slate-900 flex items-center p-1 bg-white hover:bg-slate-100 rounded-md border border-slate-200 shadow-2xs transition-all"
+                                title="Copy Link"
+                              >
+                                <span className="material-symbols-outlined text-xs">content_copy</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2448,8 +2631,39 @@ ${companyName}
                   placeholder="e.g. +91 98765 43210"
                   value={newClientPhone}
                   onChange={(e) => setNewClientPhone(e.target.value)}
-                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                  className={`w-full h-10 border rounded-lg px-3 text-sm outline-none transition-all ${
+                    newClientPhone.trim() 
+                      ? (validatePhoneNumber(newClientPhone).isValid 
+                        ? "border-emerald-500 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500" 
+                        : "border-rose-500 focus:border-rose-600 focus:ring-1 focus:ring-rose-500")
+                      : "border-slate-300 focus:border-slate-900"
+                  }`}
                 />
+                {newClientPhone.trim() && (() => {
+                  const res = validatePhoneNumber(newClientPhone);
+                  if (!res.isValid) {
+                    return (
+                      <p className="text-[11px] text-rose-600 font-bold mt-1.5 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px] font-bold">cancel</span>
+                        {res.error}
+                      </p>
+                    );
+                  } else if (res.warning) {
+                    return (
+                      <p className="text-[11px] text-amber-600 font-bold mt-1.5 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px] font-bold">warning</span>
+                        {res.warning}
+                      </p>
+                    );
+                  } else {
+                    return (
+                      <p className="text-[11px] text-emerald-600 font-bold mt-1.5 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px] font-bold">check_circle</span>
+                        Valid mobile number.
+                      </p>
+                    );
+                  }
+                })()}
               </div>
 
               <div>

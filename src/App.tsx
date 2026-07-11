@@ -100,8 +100,116 @@ export function filterNavigationLinks(
   return items.filter((item) => item.roles.includes(role));
 }
 
+// Helper function to dynamically synchronize leads with status 'Won' into CRM client profiles
+export function ensureWonLeadsAreClients(dbState: DatabaseState, userId?: string): DatabaseState {
+  if (!dbState) return dbState;
+  const crmLeads: CRMLead[] = dbState.crm_leads || [];
+  const existingClients = dbState.clients || [];
+  const updatedClients = [...existingClients];
+  let updated = false;
+
+  crmLeads.forEach(lead => {
+    if (lead.lead_status === "Won") {
+      const exists = updatedClients.some(c => 
+        (c.phone && c.phone.replace(/[^0-9]/g, "") === lead.phone_number.replace(/[^0-9]/g, "")) ||
+        c.name.toLowerCase() === lead.customer_name.toLowerCase()
+      );
+      if (!exists) {
+        const newClient: Client = {
+          id: "cl-won-" + lead.id,
+          name: lead.customer_name,
+          phone: lead.phone_number,
+          tags: ["Buyer"],
+          project_location: lead.project_interest || undefined,
+          tenant_id: userId || "owner-1"
+        };
+        updatedClients.push(newClient);
+        updated = true;
+      }
+    }
+  });
+
+  if (updated) {
+    return {
+      ...dbState,
+      clients: updatedClients
+    };
+  }
+  return dbState;
+}
+
+// Helper to ensure every lead and project has a unique project_id reference as a primary key
+export function ensureLeadsHaveProjectIds(dbState: DatabaseState): DatabaseState {
+  if (!dbState) return dbState;
+  let updated = false;
+
+  const leads = dbState.leads || [];
+  const updatedLeads = leads.map((lead, index) => {
+    if (!lead.project_id) {
+      updated = true;
+      return {
+        ...lead,
+        project_id: `BOS-PRJ-${1000 + index + 1}`
+      };
+    }
+    return lead;
+  });
+
+  const crmLeads = dbState.crm_leads || [];
+  const updatedCrmLeads = crmLeads.map((lead, index) => {
+    if (!lead.project_id) {
+      updated = true;
+      return {
+        ...lead,
+        project_id: `BOS-PRJ-${2000 + index + 1}`
+      };
+    }
+    return lead;
+  });
+
+  const projects = dbState.projects || [];
+  const updatedProjects = projects.map((project, index) => {
+    if (!project.project_id) {
+      updated = true;
+      return {
+        ...project,
+        project_id: `BOS-PRJ-${3000 + index + 1}`
+      };
+    }
+    return project;
+  });
+
+  if (updated) {
+    return {
+      ...dbState,
+      leads: updatedLeads,
+      crm_leads: updatedCrmLeads,
+      projects: updatedProjects
+    };
+  }
+  return dbState;
+}
+
 export default function App() {
-  const [db, setDb] = useState<DatabaseState | null>(null);
+  const [db, setDbStateOnly] = useState<DatabaseState | null>(null);
+  
+  const setDb = (value: DatabaseState | null | ((prev: DatabaseState | null) => DatabaseState | null)) => {
+    if (typeof value === "function") {
+      setDbStateOnly((prev) => {
+        const next = value(prev);
+        if (!next) return null;
+        const withIds = ensureLeadsHaveProjectIds(next);
+        return ensureWonLeadsAreClients(withIds, user?.uid || "owner-1");
+      });
+    } else {
+      if (!value) {
+        setDbStateOnly(null);
+      } else {
+        const withIds = ensureLeadsHaveProjectIds(value);
+        setDbStateOnly(ensureWonLeadsAreClients(withIds, user?.uid || "owner-1"));
+      }
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [currentTab, setCurrentTab] = useState("dashboard");
   const [activeRole, setActiveRole] = useState<'Owner' | 'Manager' | 'Supervisor' | 'Telecaller'>("Owner");
@@ -380,12 +488,28 @@ export default function App() {
 
   // Helper to sync modified state to backend or secure Firestore cloud
   const syncWithServer = (updatedDb: DatabaseState) => {
-    setDb(updatedDb);
+    const originalClientsCount = updatedDb.clients?.length || 0;
+    const withIds = ensureLeadsHaveProjectIds(updatedDb);
+    const migratedDb = ensureWonLeadsAreClients(withIds, user?.uid || "owner-1");
+    const newClientsCount = migratedDb.clients?.length || 0;
+
+    setDbStateOnly(migratedDb);
+
+    if (user && newClientsCount > originalClientsCount) {
+      const originalIds = new Set(updatedDb.clients?.map(c => c.id) || []);
+      migratedDb.clients.forEach(async (c) => {
+        if (!originalIds.has(c.id)) {
+          await saveDocument("clients", c.id, c);
+          addActivityLog(`CRM Lead Hub: Auto-converted client profile saved for "${c.name}".`);
+        }
+      });
+    }
+
     if (!user) {
       fetch("/api/db", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedDb),
+        body: JSON.stringify(migratedDb),
       })
         .then((res) => res.json())
         .then(() => {
@@ -780,6 +904,27 @@ export default function App() {
     }
   };
 
+  const handleCreateStock = async (stockData: Omit<MaterialStock, "id">) => {
+    if (!db) return;
+    const newId = `st-${Date.now()}`;
+    const newStock: MaterialStock = {
+      ...stockData,
+      id: newId,
+      status: stockData.current_stock > stockData.critical_level ? "In Stock" : stockData.current_stock > 0 ? "Low Stock" : "Out of Stock"
+    };
+
+    const updatedDb = {
+      ...db,
+      material_stocks: [...db.material_stocks, newStock]
+    };
+    syncWithServer(updatedDb);
+
+    if (user) {
+      await saveDocument("material_stocks", newId, newStock);
+    }
+    addActivityLog(`Registered new inventory item: "${newStock.name}" with initial stock of ${newStock.current_stock} ${newStock.unit}.`);
+  };
+
   const handleAddInboundRevenue = async (rev: Omit<InboundRevenue, "id" | "date">) => {
     if (!db) return;
     const newRev: InboundRevenue = {
@@ -1136,6 +1281,7 @@ export default function App() {
               vendors={db.vendors}
               projects={db.projects}
               onOrderStock={handleOrderMoreStock}
+              onAddStock={handleCreateStock}
               onAddLog={addActivityLog}
             />
           )}

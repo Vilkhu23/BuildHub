@@ -6,6 +6,7 @@ interface MaterialsViewProps {
   vendors: Vendor[];
   projects?: Project[];
   onOrderStock: (stockId: string, qty: number) => void;
+  onAddStock?: (stock: Omit<MaterialStock, "id">) => void;
   onAddLog: (log: string) => void;
 }
 
@@ -14,6 +15,7 @@ export default function MaterialsView({
   vendors,
   projects = [],
   onOrderStock,
+  onAddStock,
   onAddLog,
 }: MaterialsViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<"inventory" | "vendors">("inventory");
@@ -48,7 +50,46 @@ export default function MaterialsView({
   const [orderModalStockId, setOrderModalStockId] = useState<string | null>(null);
   const [orderQty, setOrderQty] = useState("");
 
+  // State for opening "Add Stock Item" modal
+  const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
+  const [newStockName, setNewStockName] = useState("");
+  const [newStockCategory, setNewStockCategory] = useState("Cement");
+  const [newStockLocation, setNewStockLocation] = useState("Main Warehouse");
+  const [newStockCurrentStock, setNewStockCurrentStock] = useState("");
+  const [newStockUnit, setNewStockUnit] = useState("Bags");
+  const [newStockCriticalLevel, setNewStockCriticalLevel] = useState("");
+  const [newStockIcon, setNewStockIcon] = useState("inventory_2");
+
   const selectedStock = stocks.find(s => s.id === orderModalStockId);
+
+  const handleAddStockSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStockName || !onAddStock) return;
+
+    const currentQty = parseFloat(newStockCurrentStock) || 0;
+    const criticalLevel = parseFloat(newStockCriticalLevel) || 10;
+
+    onAddStock({
+      name: newStockName,
+      category: newStockCategory,
+      location: newStockLocation,
+      current_stock: currentQty,
+      unit: newStockUnit,
+      critical_level: criticalLevel,
+      status: currentQty > criticalLevel ? "In Stock" : currentQty > 0 ? "Low Stock" : "Out of Stock",
+      icon: newStockIcon
+    });
+
+    // Reset fields
+    setNewStockName("");
+    setNewStockCategory("Cement");
+    setNewStockLocation("Main Warehouse");
+    setNewStockCurrentStock("");
+    setNewStockUnit("Bags");
+    setNewStockCriticalLevel("");
+    setNewStockIcon("inventory_2");
+    setIsAddStockModalOpen(false);
+  };
 
   const handleTriggerOrderSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -403,7 +444,18 @@ export default function MaterialsView({
 
               {/* Inventory list */}
               <section className="space-y-3">
-                <h3 className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Current Inventory</h3>
+                <div className="flex justify-between items-center pb-1">
+                  <h3 className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Current Inventory</h3>
+                  {onAddStock && (
+                    <button
+                      onClick={() => setIsAddStockModalOpen(true)}
+                      className="bg-slate-950 hover:bg-black text-white h-9 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 active:scale-95 transition-all shadow-sm cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-base">add_circle</span>
+                      Add Stock Item
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 gap-4">
                   {filteredStocks.length === 0 ? (
                     <div className="bg-white border border-slate-200 border-dashed p-10 rounded-2xl text-center space-y-3">
@@ -701,6 +753,178 @@ export default function MaterialsView({
                   className="flex-1 h-10 bg-slate-950 text-white rounded-lg text-xs font-bold hover:bg-black active:scale-[0.98]"
                 >
                   Confirm Order
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REGISTER NEW STOCK MODAL DIALOG */}
+      {isAddStockModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-xl animate-scale-up my-8">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-amber-500">add_business</span>
+                  Register Material Stock
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Define new material specifications to track inventory level & trigger reorder reminders.</p>
+              </div>
+              <button
+                onClick={() => setIsAddStockModalOpen(false)}
+                className="material-symbols-outlined text-slate-400 hover:text-black transition-colors"
+              >
+                close
+              </button>
+            </div>
+
+            <form onSubmit={handleAddStockSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Material Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Ultratech Cement OPC 53"
+                    value={newStockName}
+                    onChange={(e) => setNewStockName(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Category <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={newStockCategory}
+                    onChange={(e) => setNewStockCategory(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none bg-white font-medium"
+                  >
+                    <option value="Cement">Cement</option>
+                    <option value="Steel">Steel</option>
+                    <option value="Wood">Wood</option>
+                    <option value="Plumbing">Plumbing</option>
+                    <option value="Electrical">Electrical</option>
+                    <option value="Concrete">Concrete</option>
+                    <option value="Bricks">Bricks</option>
+                    <option value="Finishes">Finishes</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Warehouse Location <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Sector-63 Yard A"
+                    value={newStockLocation}
+                    onChange={(e) => setNewStockLocation(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Measurement Unit <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Bags, Tons, Nos, Brass"
+                    value={newStockUnit}
+                    onChange={(e) => setNewStockUnit(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Initial Stock Level <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    placeholder="e.g. 150"
+                    value={newStockCurrentStock}
+                    onChange={(e) => setNewStockCurrentStock(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Critical Threshold (Reorder Alert) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    placeholder="e.g. 30"
+                    value={newStockCriticalLevel}
+                    onChange={(e) => setNewStockCriticalLevel(e.target.value)}
+                    className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Material Icon selector */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Select Visual Icon representation
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { id: "inventory_2", label: "Box/Bag", icon: "inventory_2" },
+                    { id: "foundation", label: "Steel", icon: "foundation" },
+                    { id: "carpentry", label: "Wood", icon: "carpentry" },
+                    { id: "plumbing", label: "Plumbing", icon: "plumbing" },
+                    { id: "bolt", label: "Power", icon: "bolt" },
+                    { id: "format_paint", label: "Paint", icon: "format_paint" },
+                    { id: "border_outer", label: "Brick", icon: "border_outer" },
+                    { id: "hardware", label: "Tools", icon: "hardware" }
+                  ].map((ic) => (
+                    <button
+                      key={ic.id}
+                      type="button"
+                      onClick={() => setNewStockIcon(ic.icon)}
+                      className={`h-14 border rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all text-[10px] font-bold cursor-pointer ${
+                        newStockIcon === ic.icon
+                          ? "border-slate-950 bg-slate-950 text-white shadow-sm scale-[1.03]"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-lg">{ic.icon}</span>
+                      <span>{ic.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStockModalOpen(false)}
+                  className="flex-1 h-10 border border-slate-300 text-slate-600 rounded-xl text-xs font-bold active:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 h-10 bg-slate-950 text-white rounded-xl text-xs font-bold hover:bg-black active:scale-[0.98] transition-all shadow-md cursor-pointer"
+                >
+                  Register Stock
                 </button>
               </div>
             </form>

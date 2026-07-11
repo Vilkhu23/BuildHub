@@ -256,8 +256,12 @@ export default function DashboardView({
   // Cash Reservoir = Total Inbound Cash + Inbound Commissions - Total Daily Payments - Total Office Expenses - Outbound Commission Payouts
   const actualCashReservoirVal = totalInboundSum + totalInboundCommissions - totalDailySpentSum - totalOfficeExpensesSum - totalOutboundPayouts;
 
-  // Projected Net Profit: total project budget minus projected estimates + commission margin minus office overheads
-  const netProjectMargins = activeProjectsList.reduce((sum, p) => sum + Math.max(0, p.total_budget - getProjectedCost(p)), 0);
+  // Real-time Net Profit: total project budget minus either projected estimates or actual disbursements (whichever is higher) + commission margin minus office overheads
+  const netProjectMargins = activeProjectsList.reduce((sum, p) => {
+    const projectSpent = dailyPayments.filter(dp => dp.project_id === p.id).reduce((sum, dp) => sum + dp.amount, 0);
+    const cost = Math.max(getProjectedCost(p), projectSpent);
+    return sum + (p.total_budget - cost);
+  }, 0);
   const netProfitVal = netProjectMargins + netCommissionBalance - totalOfficeExpensesSum;
   const projectedMarginVal = totalBudget > 0 ? (netProfitVal / totalBudget) * 100 : 0;
 
@@ -292,7 +296,7 @@ export default function DashboardView({
     .filter(r => r.registry_deadline)
     .map(r => {
       const deadlineDate = new Date(r.registry_deadline);
-      const today = new Date("2026-06-27"); // Anchor mock date for evaluation
+      const today = new Date(); // Real-time date
       const timeDiff = deadlineDate.getTime() - today.getTime();
       const daysRemaining = Math.ceil(timeDiff / (1000 * 3600 * 24));
       return {
@@ -308,7 +312,7 @@ export default function DashboardView({
   // Generate last 30 days of cash flow data
   const chartData = React.useMemo(() => {
     const data: Array<{ dateLabel: string; Inflow: number; Outflow: number }> = [];
-    const today = new Date("2026-06-28"); // Current local time as anchor
+    const today = new Date(); // Real-time date
     
     // Create map of last 30 days
     for (let i = 29; i >= 0; i--) {
@@ -656,7 +660,9 @@ export default function DashboardView({
               <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 shadow-sm">
                 <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block">Net Profit</span>
                 <span className="text-xl font-black tracking-tight mt-1 block">{formatLakhsCrores(netProfitVal)}</span>
-                <span className="text-[9px] text-emerald-400 font-bold mt-1 block">Margin: {projectedMarginVal.toFixed(1)}%</span>
+                <span className={`text-[9px] font-bold mt-1 block ${projectedMarginVal >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                  Margin: {projectedMarginVal.toFixed(1)}%
+                </span>
               </div>
 
               {/* Card 2: Cash Reservoir */}
@@ -725,12 +731,19 @@ export default function DashboardView({
               </div>
 
               {/* Projected Profit Margin Card */}
-              <div className="bg-emerald-50 p-4 border border-emerald-200 rounded-xl shadow-sm">
-                <p className="text-[11px] font-bold text-emerald-800 mb-1 uppercase tracking-wider">Projected Business Margin</p>
+              <div className={`${projectedMarginVal >= 0 ? "bg-emerald-50 border-emerald-200" : "bg-rose-50 border-rose-200"} p-4 border rounded-xl shadow-sm`}>
+                <p className={`text-[11px] font-bold mb-1 uppercase tracking-wider ${projectedMarginVal >= 0 ? "text-emerald-800" : "text-rose-800"}`}>
+                  Projected Business Margin
+                </p>
                 <div className="flex items-baseline gap-2">
-                  <p className="text-2xl font-black text-emerald-700">{projectedMarginVal.toFixed(1)}%</p>
-                  <span className="material-symbols-outlined text-emerald-700 text-sm font-bold" style={{ fontVariationSettings: "'FILL' 1" }}>
-                    trending_up
+                  <p className={`text-2xl font-black ${projectedMarginVal >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                    {projectedMarginVal.toFixed(1)}%
+                  </p>
+                  <span 
+                    className={`material-symbols-outlined text-sm font-bold ${projectedMarginVal >= 0 ? "text-emerald-700" : "text-rose-700"}`} 
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    {projectedMarginVal >= 0 ? "trending_up" : "trending_down"}
                   </span>
                 </div>
               </div>
@@ -1779,16 +1792,15 @@ export default function DashboardView({
 
                   {ledgerPaymentStage === "Advance" && (
                     <div>
-                      <label className="block text-xs font-bold text-rose-600 uppercase mb-1 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-xs">calendar_today</span>
-                        Bayana Registry Deadline Date
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs text-slate-400">calendar_today</span>
+                        Bayana Registry Deadline Date <span className="text-[10px] text-slate-400 normal-case font-normal">(Optional)</span>
                       </label>
                       <input
                         type="date"
-                        required
                         value={ledgerRegistryDeadline}
                         onChange={(e) => setLedgerRegistryDeadline(e.target.value)}
-                        className="w-full h-10 border border-rose-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                        className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none font-medium"
                       />
                     </div>
                   )}

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { CRMLead, TenantProfile, Profile } from "../types";
 import { triggerWhatsAppNotifications } from "../lib/whatsappLeadTrigger";
 import { CRMLeadEngine } from "../lib/CRMLeadEngine";
+import { validatePhoneNumber } from "../lib/validation";
 import MobileLeadCard from "./MobileLeadCard";
 import { AttendanceMatrixDashboard, TelecallerStatus, PipelineSummary } from "./AttendanceMatrixDashboard";
 
@@ -131,6 +132,11 @@ export default function CRMLeadHub({
     e.preventDefault();
     if (!customerName.trim() || !phoneNumber.trim()) return;
 
+    const validation = validatePhoneNumber(phoneNumber);
+    if (!validation.isValid) {
+      return;
+    }
+
     onAddCRMLead({
       customer_name: customerName.trim(),
       phone_number: phoneNumber.trim(),
@@ -169,6 +175,7 @@ export default function CRMLeadHub({
     const matchesSearch = 
       lead.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (lead.project_interest || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (lead.project_id || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.phone_number.includes(searchQuery);
     
     const matchesStatus = statusFilter === "All" || lead.lead_status === statusFilter;
@@ -596,9 +603,16 @@ export default function CRMLeadHub({
                         {/* 1. Customer Details & Source Badge */}
                         <td className="p-4">
                           <div className="flex flex-col space-y-1">
-                            <span className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
-                              {lead.customer_name}
-                            </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
+                                {lead.customer_name}
+                              </span>
+                              {lead.project_id && (
+                                <span className="inline-flex items-center bg-slate-900 text-slate-100 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border border-slate-700 select-all" title="Unique Project ID (Primary Key)">
+                                  🔑 {lead.project_id}
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] font-mono text-slate-500 font-semibold">{lead.phone_number}</span>
                               <a
@@ -931,18 +945,7 @@ export default function CRMLeadHub({
                   lead={lead}
                   profiles={profiles}
                   onUpdateLead={onUpdateCRMLead}
-                  onAddLog={(msg) => {
-                    const currentLogs = lead.logs || [];
-                    const newLog = {
-                      id: `log_${Date.now()}`,
-                      performed_by: "Telecaller",
-                      action: msg,
-                      timestamp: new Date().toISOString()
-                    };
-                    onUpdateCRMLead(lead.id, {
-                      logs: [newLog, ...currentLogs]
-                    });
-                  }}
+                  activeRole={activeRole}
                 />
               ))}
             </div>
@@ -995,8 +998,39 @@ export default function CRMLeadHub({
                     placeholder="e.g., +91 9876543210"
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
-                    className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    className={`w-full h-11 px-4 bg-slate-50 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 transition-all ${
+                      phoneNumber.trim() 
+                        ? (validatePhoneNumber(phoneNumber).isValid 
+                          ? "border-emerald-500 focus:ring-emerald-500" 
+                          : "border-rose-500 focus:ring-rose-500")
+                        : "border-slate-200 focus:ring-slate-900"
+                    }`}
                   />
+                  {phoneNumber.trim() && (() => {
+                    const res = validatePhoneNumber(phoneNumber);
+                    if (!res.isValid) {
+                      return (
+                        <p className="text-[10px] text-rose-600 font-bold mt-1 flex items-center gap-1 leading-none">
+                          <span className="material-symbols-outlined text-[12px] font-bold">cancel</span>
+                          {res.error}
+                        </p>
+                      );
+                    } else if (res.warning) {
+                      return (
+                        <p className="text-[10px] text-amber-600 font-bold mt-1 flex items-center gap-1 leading-none">
+                          <span className="material-symbols-outlined text-[12px] font-bold">warning</span>
+                          {res.warning}
+                        </p>
+                      );
+                    } else {
+                      return (
+                        <p className="text-[10px] text-emerald-600 font-bold mt-1 flex items-center gap-1 leading-none">
+                          <span className="material-symbols-outlined text-[12px] font-bold">check_circle</span>
+                          Valid.
+                        </p>
+                      );
+                    }
+                  })()}
                 </div>
 
                 <div className="space-y-1">

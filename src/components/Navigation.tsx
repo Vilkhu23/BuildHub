@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Profile, TenantProfile } from "../types";
 import ProfileSettingsDropdown from "./ProfileSettingsDropdown";
 
@@ -34,6 +34,8 @@ export default function Navigation({
   onOpenSubscriptionDetails,
   filterNavigationLinks,
 }: NavigationProps) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   // Get active role user avatar/profile
   const currentUser = profiles.find((p) => p.user_role === activeRole) || {
     name: "Rajesh Singh",
@@ -57,12 +59,12 @@ export default function Navigation({
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: "dashboard", roles: ["Owner", "Manager", "Supervisor"] },
-    { id: "estimates", label: "Estimates", icon: "calculate", roles: ["Owner", "Manager"] },
+    { id: "leads", label: "CRM Leads", icon: "hub", roles: ["Owner", "Manager", "Telecaller"] },
     { id: "materials", label: "Materials", icon: "inventory_2", roles: ["Owner", "Manager"] },
+    { id: "estimates", label: "Estimates", icon: "calculate", roles: ["Owner", "Manager"] },
     { id: "orders", label: "Orders", icon: "receipt_long", roles: ["Owner", "Manager", "Supervisor"] },
     { id: "sitelog", label: "Site Log", icon: "mic", roles: ["Owner", "Supervisor", "Manager"] },
     { id: "properties", label: "Properties", icon: "domain", roles: ["Owner", "Telecaller", "Manager"] },
-    { id: "leads", label: "CRM Leads", icon: "hub", roles: ["Owner", "Manager", "Telecaller"] },
     { id: "settings", label: "Settings", icon: "settings", roles: ["Owner", "Manager"] },
   ];
 
@@ -190,39 +192,168 @@ export default function Navigation({
       </div>
 
       {/* Premium Sticky Bottom Tab Bar for Mobile Devices */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200/90 z-50 px-2 pb-safe pt-2 flex justify-around items-center shadow-[0_-4px_16px_rgba(15,23,42,0.06)] backdrop-blur-lg">
-        {visibleItems.map((item) => {
-          const isAccessible = item.roles.includes(activeRole);
-          const isActive = currentTab === item.id;
+      {(() => {
+        const showMoreButton = visibleItems.length > 4;
+        const primaryMobileItems = showMoreButton ? visibleItems.slice(0, 4) : visibleItems;
 
-          return (
-            <button
-              key={item.id}
-              disabled={!isAccessible}
-              onClick={() => {
-                if (isAccessible) setCurrentTab(item.id);
-              }}
-              className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-                !isAccessible
-                  ? "opacity-25 cursor-not-allowed text-slate-300"
-                  : isActive
-                  ? "text-emerald-600 scale-105"
-                  : "text-slate-500 hover:text-slate-950 active:scale-95"
-              }`}
-            >
-              <span className="material-symbols-outlined text-xl transition-transform" style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
-                {item.icon}
-              </span>
-              <span className="text-[9px] font-extrabold uppercase tracking-wide mt-1">
-                {item.label === "Site Log" ? "Log" : item.label === "Properties" ? "Realty" : item.label === "CRM Leads" ? "CRM" : item.label}
-              </span>
-              {isActive && (
-                <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full mt-0.5 animate-pulse" />
-              )}
-            </button>
-          );
-        })}
-      </div>
+        return (
+          <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 border-t border-slate-200/90 z-40 pb-safe pt-2 flex justify-between items-center shadow-[0_-4px_20px_rgba(15,23,42,0.08)] backdrop-blur-md px-1">
+            {primaryMobileItems.map((item) => {
+              const isAccessible = item.roles.includes(activeRole);
+              const isActive = currentTab === item.id && !isMobileMenuOpen;
+
+              return (
+                <button
+                  key={item.id}
+                  disabled={!isAccessible}
+                  onClick={() => {
+                    if (isAccessible) {
+                      setCurrentTab(item.id);
+                      setIsMobileMenuOpen(false);
+                    }
+                  }}
+                  className={`flex-1 flex flex-col items-center justify-center py-1 transition-all cursor-pointer ${
+                    !isAccessible
+                      ? "opacity-25 cursor-not-allowed text-slate-300"
+                      : isActive
+                      ? "text-slate-950 scale-105 font-black"
+                      : "text-slate-400 hover:text-slate-600 active:scale-95"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-xl transition-transform" style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
+                    {item.icon}
+                  </span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider mt-1 text-center leading-none">
+                    {item.label === "Site Log" ? "Log" : item.label === "Properties" ? "Realty" : item.label === "CRM Leads" ? "Leads" : item.label}
+                  </span>
+                  {isActive && (
+                    <div className="w-1 h-1 bg-slate-950 rounded-full mt-1 animate-pulse" />
+                  )}
+                </button>
+              );
+            })}
+
+            {showMoreButton && (
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className={`flex-1 flex flex-col items-center justify-center py-1 transition-all cursor-pointer ${
+                  isMobileMenuOpen
+                    ? "text-emerald-600 scale-105 font-black"
+                    : "text-slate-400 hover:text-slate-600 active:scale-95"
+                }`}
+              >
+                <span className="material-symbols-outlined text-xl transition-transform" style={{ fontVariationSettings: isMobileMenuOpen ? "'FILL' 1" : "'FILL' 0" }}>
+                  menu
+                </span>
+                <span className="text-[9px] font-bold uppercase tracking-wider mt-1 text-center leading-none">
+                  More
+                </span>
+                {isMobileMenuOpen && (
+                  <div className="w-1 h-1 bg-emerald-600 rounded-full mt-1 animate-pulse" />
+                )}
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Floating Bottom Sheet Menu Overlay Drawer for Mobile (Thumb-accessible) */}
+      {isMobileMenuOpen && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="md:hidden fixed inset-0 bg-slate-950/60 z-50 transition-opacity duration-300" 
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          
+          {/* Sliding Bottom Drawer Container */}
+          <div className="md:hidden fixed bottom-14 left-0 right-0 bg-white rounded-t-3xl border-t border-slate-200/80 shadow-[0_-8px_30px_rgba(15,23,42,0.15)] z-50 px-5 pt-4 pb-8 max-h-[80vh] overflow-y-auto animate-scale-up">
+            {/* Handle bar for visual cue */}
+            <div className="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-4" />
+            
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Quick Navigation</h3>
+                <p className="text-[10px] font-medium text-slate-500 mt-0.5">Access all workspace modules with one hand</p>
+              </div>
+              <button 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 active:scale-95 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            </div>
+
+            {/* Grid of all visible items */}
+            <div className="grid grid-cols-3 gap-2.5">
+              {visibleItems.map((item) => {
+                const isActive = currentTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setCurrentTab(item.id);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`flex flex-col items-center justify-center py-3 px-1 rounded-2xl border transition-all cursor-pointer ${
+                      isActive
+                        ? "bg-slate-900 border-slate-900 text-white shadow-md scale-102 font-extrabold"
+                        : "bg-slate-50 border-slate-200/60 text-slate-700 hover:bg-slate-100 font-bold active:scale-95"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-xl mb-1" style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
+                      {item.icon}
+                    </span>
+                    <span className="text-[9px] uppercase tracking-wide text-center leading-tight whitespace-nowrap">
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick Role switcher inside Drawer to make it super easy */}
+            <div className="mt-5 pt-4 border-t border-slate-100">
+              <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider mb-2 block">Switch Active Role Persona</span>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: "Owner", label: "👑 Owner" },
+                  { id: "Manager", label: "💼 Manager" },
+                  { id: "Supervisor", label: "🚧 Supervisor" },
+                  { id: "Telecaller", label: "📞 Telecaller" }
+                ].map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => {
+                      const role = r.id as any;
+                      setActiveRole(role);
+                      // Redirect rules
+                      if (role === "Telecaller") {
+                        setCurrentTab("properties");
+                      } else if (role === "Supervisor" && (currentTab === "estimates" || currentTab === "materials" || currentTab === "properties" || currentTab === "settings")) {
+                        setCurrentTab("sitelog");
+                      } else if (currentTab === "properties" && role === "Supervisor") {
+                        setCurrentTab("sitelog");
+                      }
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`h-9 px-3 rounded-xl text-xs font-bold border transition-all text-left flex items-center justify-between cursor-pointer ${
+                      activeRole === r.id
+                        ? "bg-emerald-50 border-emerald-500/30 text-emerald-800"
+                        : "bg-slate-50 border-slate-200/50 text-slate-700"
+                    }`}
+                  >
+                    <span>{r.label}</span>
+                    {activeRole === r.id && (
+                      <span className="material-symbols-outlined text-sm text-emerald-600">check_circle</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

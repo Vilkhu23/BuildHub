@@ -68,6 +68,10 @@ export interface Project {
     interior_vendor_name?: string;
   };
   gst_rate?: number;
+  project_id?: string;
+  generated_share_id?: string;
+  revision_number?: number;
+  past_revisions?: Array<{ share_id: string; revision: number; date: string }>;
 }
 
 export interface Property {
@@ -223,6 +227,7 @@ export interface Lead {
   source: 'Meta Ads' | 'WhatsApp' | 'Google Search' | 'Referral';
   status: 'New' | 'Quoted' | 'Follow-up';
   created_at: string;
+  project_id?: string; // Unique primary key/reference code for business
 }
 
 export interface LeadActivityLog {
@@ -248,4 +253,5 @@ export interface CRMLead {
   next_followup_date?: string;  // "YYYY-MM-DD" for dashboard alarms
   logs: LeadActivityLog[];       // Audit log timeline matrix
   created_at: string;
+  project_id?: string; // Unique primary key/reference code for business
 }
