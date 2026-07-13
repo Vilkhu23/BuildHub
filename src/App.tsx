@@ -361,41 +361,6 @@ export default function App() {
               loadedDb.tenant_profiles = [fallbackProfile];
               await setDoc(doc(firestoreDb, "companies", companyId, "tenant_profiles", "tp-default"), sanitizeFirestoreData(fallbackProfile));
             }
-
-            // Automatically purge old pre-seeded projects and materials entries if detected
-            const hasPreseededData = 
-              (loadedDb.projects && loadedDb.projects.length > 0 && loadedDb.projects[0].project_name.includes("Sector-85")) || 
-              (loadedDb.material_stocks && loadedDb.material_stocks.length > 0 && loadedDb.material_stocks[0].name.includes("Sand"));
-
-            if (hasPreseededData) {
-              addActivityLog("Syncing requests: Purging pre-seeded projects, quotations, and materials to a blank slate...");
-              const collectionsToClear = [
-                { key: "projects", path: "projects" },
-                { key: "material_stocks", path: "material_stocks" },
-                { key: "purchase_orders", path: "purchase_orders" },
-                { key: "alerts", path: "alerts" },
-                { key: "daily_payments", path: "daily_payments" },
-                { key: "inbound_revenues", path: "inbound_revenues" },
-                { key: "properties", path: "properties" },
-                { key: "clients", path: "clients" },
-                { key: "deal_adjustments", path: "deal_adjustments" },
-                { key: "buyer_requirements", path: "leads" },
-                { key: "vendors", path: "vendors" },
-                { key: "office_expenses", path: "office_expenses" },
-                { key: "leads", path: "crm_leads" },
-                { key: "crm_leads", path: "construction_inquiries" }
-              ];
-
-              for (const col of collectionsToClear) {
-                const colRef = collection(firestoreDb, "companies", companyId, col.path);
-                const snap = await getDocs(colRef);
-                const deletePromises = snap.docs.map(doc => deleteDoc(doc.ref));
-                await Promise.all(deletePromises);
-                (loadedDb as any)[col.key] = [];
-              }
-              addActivityLog("Database successfully reset to a completely blank slate.");
-            }
-
             setDb(loadedDb as DatabaseState);
             addActivityLog("Secure company cloud database loaded successfully from Firestore.");
           } else {
@@ -1310,6 +1275,7 @@ export default function App() {
             <PropertyView
               properties={db.properties}
               buyerRequirements={db.buyer_requirements || []}
+              crmLeads={db.leads || []}
               onAddLog={addActivityLog}
               activeRole={activeRole}
               onAddProperty={handleAddProperty}

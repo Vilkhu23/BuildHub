@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Property, BuyerRequirement } from "../types";
+import { Property, BuyerRequirement, CRMLead } from "../types";
 
 interface PropertyViewProps {
   properties: Property[];
   buyerRequirements: BuyerRequirement[];
+  crmLeads?: CRMLead[];
   onAddLog: (log: string) => void;
   activeRole: 'Owner' | 'Manager' | 'Supervisor' | 'Telecaller';
   onAddProperty?: (property: Omit<Property, "id">) => void;
@@ -13,6 +14,7 @@ interface PropertyViewProps {
 export default function PropertyView({
   properties,
   buyerRequirements,
+  crmLeads = [],
   onAddLog,
   activeRole,
   onAddProperty,
@@ -53,15 +55,73 @@ export default function PropertyView({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
 
-  // Lead inputs
+  // Lead inputs & match overrides
   const [buyerName, setBuyerName] = useState("");
   const [buyerPhone, setBuyerPhone] = useState("");
+  const [buyerBudget, setBuyerBudget] = useState<string>("");
+  const [buyerPropType, setBuyerPropType] = useState<'Plot' | 'Villa' | 'Flat' | 'Commercial' | string>("Flat");
 
   // Match result
   const [isMatching, setIsMatching] = useState(false);
   const [compiledPitch, setCompiledPitch] = useState("");
   const [encodedPitch, setEncodedPitch] = useState("");
   const [mapsLinks, setMapsLinks] = useState<{ title: string; uri: string }[]>([]);
+
+  // Price Normalizer Helper (treats < 10000 as Lakhs and converts to Rupees)
+  const getNormalizedValue = (val: any): number => {
+    const num = Number(val || 0);
+    if (num > 0 && num < 10000) {
+      return num * 100000;
+    }
+    return num;
+  };
+
+  const normalizePrice = (val: number): number => {
+    if (val > 0 && val < 10000) {
+      return val * 100000;
+    }
+    return val;
+  };
+
+  // Drawer level match checkers
+  const getMatchingDemands = () => {
+    if (!selectedProperty) return [];
+    return buyerRequirements.filter(req => {
+      const isTypeMatch = req.property_type.toLowerCase().trim() === selectedProperty.property_type.toLowerCase().trim();
+      const pPrice = getNormalizedValue(selectedProperty.target_selling_price);
+      const rBudget = getNormalizedValue(req.max_budget);
+      return isTypeMatch && rBudget >= pPrice;
+    });
+  };
+
+  const parseBudgetTier = (tier: string): number => {
+    if (!tier) return Infinity;
+    const cleaned = tier.toLowerCase().trim();
+    if (cleaned.includes("1cr+")) return Infinity;
+    if (cleaned.includes("cr")) return 10000000;
+    if (cleaned.includes("l")) {
+      const parts = cleaned.split("-");
+      const lastPart = parts[parts.length - 1];
+      const num = parseFloat(lastPart.replace(/[^0-9.]/g, ""));
+      if (!isNaN(num)) return num * 100000;
+    }
+    return Infinity;
+  };
+
+  const getMatchingCRMLeads = () => {
+    if (!selectedProperty || !crmLeads) return [];
+    return crmLeads.filter(lead => {
+      const interest = (lead.project_interest || "").toLowerCase();
+      const propTitle = selectedProperty.title.toLowerCase();
+      const propType = selectedProperty.property_type.toLowerCase();
+      const isTypeMatch = interest.includes(propType) || interest.includes("bhk") || propTitle.includes(interest);
+      
+      const pPrice = getNormalizedValue(selectedProperty.target_selling_price);
+      const leadMaxBudget = parseBudgetTier(lead.budget_tier || "");
+      
+      return isTypeMatch && leadMaxBudget >= pPrice;
+    });
+  };
 
   const copyToClipboard = (text: string) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -91,7 +151,13 @@ export default function PropertyView({
     document.body.removeChild(textArea);
   };
 
-  const generatePitchAndMatch = async (prop: Property, name: string, phone: string) => {
+  const generatePitchAndMatch = async (
+    prop: Property, 
+    name: string, 
+    phone: string, 
+    budgetOverride?: string, 
+    propTypeOverride?: string
+  ) => {
     setIsMatching(true);
     setCompiledPitch("");
     setEncodedPitch("");
@@ -103,9 +169,11 @@ export default function PropertyView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientName: name || "Valued Client",
-          propertyType: prop.property_type,
+          propertyType: propTypeOverride || prop.property_type,
           preferredLocation: prop.location,
-          maxBudget: prop.target_selling_price
+          maxBudget: budgetOverride ? getNormalizedValue(budgetOverride) : prop.target_selling_price,
+          selectedProperty: prop,
+          properties: properties
         }),
       });
 
@@ -126,18 +194,32 @@ export default function PropertyView({
     }
   };
 
-  const handleOpenMatcher = (prop: Property, defaultName: string = "Valued Client", defaultPhone: string = "") => {
+  const handleOpenMatcher = (
+    prop: Property, 
+    defaultName: string = "Valued Client", 
+    defaultPhone: string = "", 
+    defaultBudget?: number,
+    defaultType?: string
+  ) => {
     setSelectedProperty(prop);
     setBuyerName(defaultName);
     setBuyerPhone(defaultPhone);
+    setBuyerBudget(defaultBudget ? defaultBudget.toString() : prop.target_selling_price.toString());
+    setBuyerPropType(defaultType || prop.property_type);
     setIsDrawerOpen(true);
-    generatePitchAndMatch(prop, defaultName, defaultPhone);
+    generatePitchAndMatch(
+      prop, 
+      defaultName, 
+      defaultPhone, 
+      defaultBudget ? defaultBudget.toString() : prop.target_selling_price.toString(), 
+      defaultType || prop.property_type
+    );
   };
 
   const handleRunAutoMatcher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProperty) return;
-    generatePitchAndMatch(selectedProperty, buyerName, buyerPhone);
+    generatePitchAndMatch(selectedProperty, buyerName, buyerPhone, buyerBudget, buyerPropType);
   };
 
   const handleAddPropertySubmit = (e: React.FormEvent) => {
@@ -149,8 +231,8 @@ export default function PropertyView({
         title: newPropTitle,
         property_type: newPropType,
         location: newPropLocation,
-        asking_price: Number(newPropAskingPrice || newPropSellingPrice),
-        target_selling_price: Number(newPropSellingPrice),
+        asking_price: normalizePrice(Number(newPropAskingPrice || newPropSellingPrice)),
+        target_selling_price: normalizePrice(Number(newPropSellingPrice)),
         source_person_name: newPropSource || "Direct Owner",
         source_person_type: newPropSourceType,
         source_person_phone: newPropSourcePhone,
@@ -178,7 +260,7 @@ export default function PropertyView({
         buyer_name: newBuyerName,
         buyer_phone: newBuyerPhone,
         preferred_location: newBuyerLocation || "Anywhere",
-        max_budget: Number(newBuyerBudget),
+        max_budget: normalizePrice(Number(newBuyerBudget)),
         property_type: newBuyerPropType
       });
     }
@@ -435,9 +517,12 @@ export default function PropertyView({
               </div>
             ) : (
               buyerRequirements.map((req) => {
-                const autoMatches = properties.filter(
-                  p => p.property_type === req.property_type && p.target_selling_price <= req.max_budget
-                );
+                const autoMatches = properties.filter(p => {
+                  const isTypeMatch = p.property_type.toLowerCase().trim() === req.property_type.toLowerCase().trim();
+                  const pPrice = getNormalizedValue(p.target_selling_price);
+                  const rBudget = getNormalizedValue(req.max_budget);
+                  return isTypeMatch && pPrice <= rBudget;
+                });
                 return (
                   <div key={req.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 flex flex-col justify-between">
                     <div className="space-y-2">
@@ -479,7 +564,7 @@ export default function PropertyView({
                               <span className="font-bold text-slate-800 truncate max-w-[65%]" title={match.title}>{match.title}</span>
                               <button
                                 onClick={() => {
-                                  handleOpenMatcher(match, req.buyer_name, req.buyer_phone);
+                                  handleOpenMatcher(match, req.buyer_name, req.buyer_phone, req.max_budget, req.property_type);
                                 }}
                                 className="bg-slate-950 text-white font-extrabold text-[10px] px-2 py-1 rounded hover:bg-black transition-colors"
                               >
@@ -521,11 +606,14 @@ export default function PropertyView({
                 </button>
               </div>
 
-              {/* Lead registration form */}
-              <form onSubmit={handleRunAutoMatcher} className="space-y-4">
+              {/* Lead registration & auto-matcher override form */}
+              <form onSubmit={handleRunAutoMatcher} className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200/60">
+                <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                  🎯 AI Lead Auto-Matcher Parameters
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                       Buyer Name
                     </label>
                     <input
@@ -534,19 +622,49 @@ export default function PropertyView({
                       placeholder="e.g. Amit Verma"
                       value={buyerName}
                       onChange={(e) => setBuyerName(e.target.value)}
-                      className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                      className="w-full h-10 border border-slate-300 rounded-lg px-3 bg-white text-sm focus:border-slate-900 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      Phone Number (Optional)
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Phone Number
                     </label>
                     <input
                       type="tel"
                       placeholder="e.g. 9876543210"
                       value={buyerPhone}
                       onChange={(e) => setBuyerPhone(e.target.value)}
-                      className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                      className="w-full h-10 border border-slate-300 rounded-lg px-3 bg-white text-sm focus:border-slate-900 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Preferred Type
+                    </label>
+                    <select
+                      value={buyerPropType}
+                      onChange={(e) => setBuyerPropType(e.target.value)}
+                      className="w-full h-10 border border-slate-300 rounded-lg px-3 bg-white text-sm focus:border-slate-900 outline-none"
+                    >
+                      <option value="Villa">Villa</option>
+                      <option value="Flat">Flat</option>
+                      <option value="Plot">Plot</option>
+                      <option value="Commercial">Commercial</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Max Budget (₹)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 10000000"
+                      value={buyerBudget}
+                      onChange={(e) => setBuyerBudget(e.target.value)}
+                      className="w-full h-10 border border-slate-300 rounded-lg px-3 bg-white text-sm focus:border-slate-900 outline-none"
                     />
                   </div>
                 </div>
@@ -554,12 +672,69 @@ export default function PropertyView({
                 <button
                   type="submit"
                   disabled={isMatching || !buyerName}
-                  className="w-full h-11 bg-slate-900 hover:bg-black text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-2"
+                  className="w-full h-11 bg-slate-950 hover:bg-black text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-2"
                 >
                   <span className="material-symbols-outlined text-sm font-bold">analytics</span>
                   {isMatching ? "AI Matcher Running..." : "Run AI Lead Auto-Matcher"}
                 </button>
               </form>
+
+              {/* Dynamic matching suggestions inside the drawer */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  👥 Live Registered Demands & CRM Matches
+                </span>
+                
+                {getMatchingDemands().length === 0 && getMatchingCRMLeads().length === 0 ? (
+                  <p className="text-xs font-semibold text-slate-400 italic">No registered buyer demands match this property's specs.</p>
+                ) : (
+                  <div className="space-y-2 max-h-36 overflow-y-auto pr-1 no-scrollbar">
+                    {/* Buyer Demands matches */}
+                    {getMatchingDemands().map(req => (
+                      <div 
+                        key={req.id} 
+                        onClick={() => {
+                          setBuyerName(req.buyer_name);
+                          setBuyerPhone(req.buyer_phone);
+                          setBuyerBudget(req.max_budget.toString());
+                          setBuyerPropType(req.property_type);
+                          generatePitchAndMatch(selectedProperty, req.buyer_name, req.buyer_phone, req.max_budget.toString(), req.property_type);
+                        }}
+                        className="p-2 border border-emerald-100 hover:border-emerald-300 bg-emerald-50/30 hover:bg-emerald-50 rounded-lg cursor-pointer flex justify-between items-center transition-all"
+                      >
+                        <div>
+                          <div className="text-xs font-extrabold text-slate-900">{req.buyer_name} <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded uppercase font-black">Demand</span></div>
+                          <div className="text-[10px] text-slate-500 font-medium">Budget: ₹{(req.max_budget / 100000).toFixed(1)}L | Type: {req.property_type}</div>
+                        </div>
+                        <span className="material-symbols-outlined text-emerald-600 text-sm">flash_on</span>
+                      </div>
+                    ))}
+
+                    {/* CRM leads matches */}
+                    {getMatchingCRMLeads().map(lead => (
+                      <div 
+                        key={lead.id} 
+                        onClick={() => {
+                          setBuyerName(lead.customer_name);
+                          setBuyerPhone(lead.phone_number);
+                          const parsedBudget = parseBudgetTier(lead.budget_tier || "");
+                          const budgetStr = parsedBudget === Infinity ? selectedProperty.target_selling_price.toString() : parsedBudget.toString();
+                          setBuyerBudget(budgetStr);
+                          setBuyerPropType(selectedProperty.property_type);
+                          generatePitchAndMatch(selectedProperty, lead.customer_name, lead.phone_number, budgetStr, selectedProperty.property_type);
+                        }}
+                        className="p-2 border border-blue-100 hover:border-blue-300 bg-blue-50/30 hover:bg-blue-50 rounded-lg cursor-pointer flex justify-between items-center transition-all"
+                      >
+                        <div>
+                          <div className="text-xs font-extrabold text-slate-900">{lead.customer_name} <span className="text-[9px] bg-blue-100 text-blue-800 px-1 py-0.2 rounded uppercase font-black">CRM Lead</span></div>
+                          <div className="text-[10px] text-slate-500 font-medium">Budget Tier: {lead.budget_tier || "N/A"} | Interest: {lead.project_interest}</div>
+                        </div>
+                        <span className="material-symbols-outlined text-blue-600 text-sm">flash_on</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* Sales pitch display section */}
               {isMatching ? (
@@ -625,7 +800,11 @@ export default function PropertyView({
             {compiledPitch && (
               <div className="border-t border-slate-100 pt-4 bg-white">
                 <a
-                  href={`https://wa.me/${buyerPhone ? buyerPhone.replace(/[^0-9]/g, "") : "919876543210"}?text=${encodedPitch}`}
+                  href={`https://wa.me/${(() => {
+                    const digits = buyerPhone ? buyerPhone.replace(/[^0-9]/g, "") : "";
+                    if (!digits) return "919876543210";
+                    return digits.length === 10 ? `91${digits}` : digits;
+                  })()}?text=${encodeURIComponent(compiledPitch)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center gap-2 font-bold text-xs uppercase tracking-wider shadow-md shadow-emerald-600/15"

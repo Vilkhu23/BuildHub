@@ -165,44 +165,67 @@ Phrase: "${phrase}"`;
 
 // Feature B: Broker Agent - Dynamic Lead Inventory Auto-Matcher Endpoint with Maps Grounding
 router.post("/auto-match", async (req, res) => {
-  const { clientName, propertyType, preferredLocation, maxBudget } = req.body;
+  const { clientName, propertyType, preferredLocation, maxBudget, selectedProperty, properties } = req.body;
 
   try {
     const db = readDb();
+    
+    // Support using client-side properties state passed in request body, falling back to local db
+    const activeProperties = (properties && Array.isArray(properties) && properties.length > 0)
+      ? properties
+      : db.properties;
+
+    // Helper to normalize price to raw Rupees if it was entered in Lakhs
+    const getNormalizedValue = (val: any): number => {
+      const num = Number(val || 0);
+      if (num > 0 && num < 10000) {
+        return num * 100000;
+      }
+      return num;
+    };
+
     // Filter list of matching properties
-    const matches = db.properties.filter(p => {
-      const typeMatch = !propertyType || p.property_type.toLowerCase() === propertyType.toLowerCase();
-      const budgetMatch = !maxBudget || p.target_selling_price <= Number(maxBudget);
+    const matches = activeProperties.filter((p: any) => {
+      const typeMatch = !propertyType || String(p.property_type).toLowerCase().trim() === String(propertyType).toLowerCase().trim();
+      
+      const pPrice = getNormalizedValue(p.target_selling_price);
+      const limitBudget = getNormalizedValue(maxBudget);
+      const budgetMatch = !maxBudget || pPrice <= limitBudget;
+      
       return typeMatch && budgetMatch;
     });
 
-    if (matches.length === 0) {
+    // Use passed selectedProperty first, otherwise fallback to matches[0] or any active property
+    const matchedProperty = selectedProperty || matches[0] || activeProperties[0];
+
+    if (!matchedProperty) {
       return res.json({ matches: [], message: "No matching properties found in inventory." });
     }
-
-    const matchedProperty = matches[0]; // Take primary match for sales pitch
     const ai = getGeminiClient();
     const apiKey = process.env.GEMINI_API_KEY;
 
     let salesPitch = "";
     let mapsLinks: { title: string; uri: string }[] = [];
 
+    const normalizedPriceVal = getNormalizedValue(matchedProperty.target_selling_price);
+    const formattedPrice = (normalizedPriceVal / 100000).toFixed(1) + " Lakh";
+
     if (!apiKey || apiKey === "MOCK_KEY") {
       // Fallback Mock Pitch
-      const formattedPrice = (matchedProperty.target_selling_price / 100000).toFixed(1) + " Lakh";
       salesPitch = `Hi ${clientName || "Sir/Madam"}! I found a perfect option matching your requirement:\n\n🏡 *${matchedProperty.title}*\n📍 Location: ${matchedProperty.location}\n💰 Owner Asking: ₹${formattedPrice}\n\nThis is a premium, verified deal in Kharar/Mohali. Let me know if you would like to arrange a site visit or virtual walkthrough!`;
       mapsLinks = [{ title: "View " + matchedProperty.location + " on Google Maps", uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(matchedProperty.location)}` }];
     } else {
       // Real Gemini Pitch with Maps Grounding
       const prompt = `You are an elite, highly persuasive real estate channel partner and relationship manager in Mohali and Kharar (Punjab, India).
-Write a professional, compelling, extremely tailored WhatsApp marketing pitch for the client named "${clientName || "Client"}".
+Write a professional, compelling, extremadamente tailored WhatsApp marketing pitch for the client named "${clientName || "Client"}".
 The matched property details are:
 - Title: "${matchedProperty.title}"
 - Location: "${matchedProperty.location}"
-- Deal price to offer: ₹${matchedProperty.target_selling_price.toLocaleString()}
+- Deal price to offer: ₹${formattedPrice} (${normalizedPriceVal.toLocaleString()})
 
 Using Google Maps grounding, please lookup the neighborhood "${matchedProperty.location}" in Kharar/Mohali, Punjab, India. Highlight some real nearby landmarks, connectivity features, parks, or roads to make the pitch authentic and highly accurate.
-Make the message warm, direct, respectful, and slightly colloquial (incorporating a few premium Indian business terms if suited). Highlight the location and the pricing advantage. Ensure there is a strong call-to-action to connect on WhatsApp or visit. Do not write markdown blocks (bold text with stars is fine). Keep it ready to copy and paste.`;
+
+CRITICAL: Keep the WhatsApp pitch extremely concise, high-impact, and UNDER 120 words (approx. 700 characters) so it fits inside WhatsApp sharing links without browser truncation. Incorporate a few warm Indian terms respectfully, and end with a direct call-to-action to visit. Do not write markdown blocks (bold text with stars is fine). Keep it ready to copy and paste.`;
 
       try {
         const response = await generateContentWithRetry({

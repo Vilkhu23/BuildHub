@@ -117,6 +117,22 @@ service cloud.firestore {
         allow read: if hasAnyRole(companyId);
         allow write: if isOwner(companyId) || isManager(companyId);
       }
+
+      // Missing subcollections identified in applet configuration
+      match /tenant_profiles/{profileId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId);
+      }
+
+      match /crm_leads/{leadId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if isOwner(companyId) || isManager(companyId) || isTelecaller(companyId);
+      }
+
+      match /construction_inquiries/{inquiryId} {
+        allow read: if hasAnyRole(companyId);
+        allow write: if hasAnyRole(companyId);
+      }
     }
 
     // Public Estimate Snapshot Share Path (Read-only by public, write by authenticated company users)

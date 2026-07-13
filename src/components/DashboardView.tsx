@@ -182,6 +182,37 @@ export default function DashboardView({
   // State for toggles of staff active accounts
   const [staffList, setStaffList] = useState<Profile[]>(profiles.filter(p => p.user_role !== "Owner"));
 
+  // New staff modal states
+  const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
+  const [newStaffName, setNewStaffName] = useState("");
+  const [newStaffRole, setNewStaffRole] = useState<'Manager' | 'Supervisor' | 'Telecaller'>("Manager");
+
+  React.useEffect(() => {
+    setStaffList(profiles.filter(p => p.user_role !== "Owner"));
+  }, [profiles]);
+
+  const handleAddStaffSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStaffName.trim()) return;
+
+    const newStaff: Profile = {
+      id: "staff-" + Date.now(),
+      name: newStaffName.trim(),
+      user_role: newStaffRole,
+      account_status: "Active",
+      parent_owner_id: null,
+      tenant_id: tenantProfile.tenant_id || "tp-default"
+    };
+
+    const updatedProfiles = [...profiles, newStaff];
+    onUpdateProfiles(updatedProfiles);
+
+    // Reset and close
+    setNewStaffName("");
+    setNewStaffRole("Manager");
+    setIsAddStaffOpen(false);
+  };
+
   const handleToggleStaff = (id: string) => {
     const updated = staffList.map((st) =>
       st.id === id
@@ -1461,7 +1492,10 @@ export default function DashboardView({
               <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
                 Staff Management
               </h2>
-              <button className="text-slate-900 font-bold text-xs flex items-center gap-0.5 hover:underline">
+              <button 
+                onClick={() => setIsAddStaffOpen(true)}
+                className="text-slate-900 font-bold text-xs flex items-center gap-0.5 hover:underline cursor-pointer"
+              >
                 <span className="material-symbols-outlined text-sm font-bold">person_add</span>
                 Add Staff
               </button>
@@ -1579,6 +1613,76 @@ export default function DashboardView({
                   className="w-1/2 h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-colors shadow-sm"
                 >
                   Add Client
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD NEW STAFF MODAL */}
+      {isAddStaffOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">person_add</span>
+                Add New Staff
+              </h3>
+              <button 
+                onClick={() => setIsAddStaffOpen(false)} 
+                className="material-symbols-outlined text-slate-400 hover:text-black transition-colors cursor-pointer"
+              >
+                close
+              </button>
+            </div>
+
+            <form onSubmit={handleAddStaffSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Staff Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Anil Sharma"
+                  value={newStaffName}
+                  onChange={(e) => setNewStaffName(e.target.value)}
+                  className="w-full h-10 border border-slate-300 rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  Assign Workspace Role
+                </label>
+                <select
+                  value={newStaffRole}
+                  onChange={(e) => setNewStaffRole(e.target.value as any)}
+                  className="w-full h-10 border border-slate-300 bg-white rounded-lg px-3 text-sm focus:border-slate-900 outline-none"
+                >
+                  <option value="Manager">💼 Manager (Financials, Material & Estimates)</option>
+                  <option value="Supervisor">🚧 Supervisor (Site Logs, Orders & Daily Attendance)</option>
+                  <option value="Telecaller">📞 Telecaller (CRM Lead Hub & Realty Properties)</option>
+                </select>
+                <p className="text-[10px] text-slate-500 mt-1 leading-normal font-medium">
+                  Roles restrict which tabs and modules the staff member can access within the mobile and desktop app.
+                </p>
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStaffOpen(false)}
+                  className="w-1/2 h-10 border border-slate-300 hover:bg-slate-50 rounded-lg font-bold text-xs uppercase text-slate-700 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-colors shadow-sm cursor-pointer"
+                >
+                  Add Staff Member
                 </button>
               </div>
             </form>
