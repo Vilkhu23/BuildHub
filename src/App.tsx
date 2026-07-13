@@ -677,12 +677,55 @@ export default function App() {
 
   const handleUpdateCRMLead = async (leadId: string, updates: Partial<CRMLead>) => {
     if (!db) return;
+
+    const oldLead = ((db as any).crm_leads || []).find((l: CRMLead) => l.id === leadId);
+
     const updatedCRMLeads = ((db as any).crm_leads || []).map((l: CRMLead) => 
       l.id === leadId ? { ...l, ...updates } : l
     );
+
+    const newLead = updatedCRMLeads.find((l: CRMLead) => l.id === leadId);
+
+    let updatedProperties = [...(db.properties || [])];
+    let propertiesChanged = false;
+    let propertyToSaveId: string | null = null;
+    let propertyToSaveObj: any = null;
+
+    if (newLead && oldLead) {
+      const processPropertyStatus = (propId: string, leadStatus: string, isLinked: boolean) => {
+        let newPropStatus: 'Available' | 'Hold' | 'Sold' | null = null;
+        if (!isLinked) {
+          newPropStatus = 'Available';
+        } else {
+          if (leadStatus === 'Won') {
+            newPropStatus = 'Sold';
+          } else if (leadStatus === 'Quotation_Sent') {
+            newPropStatus = 'Hold';
+          } else {
+            newPropStatus = 'Available';
+          }
+        }
+        
+        const propIndex = updatedProperties.findIndex(p => p.id === propId);
+        if (propIndex !== -1 && updatedProperties[propIndex].status !== newPropStatus) {
+          updatedProperties[propIndex] = { ...updatedProperties[propIndex], status: newPropStatus as any };
+          propertiesChanged = true;
+          propertyToSaveId = propId;
+          propertyToSaveObj = updatedProperties[propIndex];
+        }
+      };
+
+      if (oldLead.linked_property_id && updates.linked_property_id === "") {
+        processPropertyStatus(oldLead.linked_property_id, newLead.lead_status, false);
+      } else if (newLead.linked_property_id) {
+        processPropertyStatus(newLead.linked_property_id, newLead.lead_status, true);
+      }
+    }
+
     const updatedDb: DatabaseState = {
       ...db,
-      crm_leads: updatedCRMLeads
+      crm_leads: updatedCRMLeads,
+      ...(propertiesChanged ? { properties: updatedProperties } : {})
     };
     syncWithServer(updatedDb);
     
@@ -692,11 +735,16 @@ export default function App() {
     if (updates.remarks !== undefined) {
       addActivityLog(`CRM Lead Hub: Updated remarks for inquiry.`);
     }
+    if (propertiesChanged) {
+      addActivityLog(`Inventory Engine: Automatically updated property status due to CRM Lead logic.`);
+    }
 
     if (user) {
-      const activeCRMLead = updatedCRMLeads.find((l: CRMLead) => l.id === leadId);
-      if (activeCRMLead) {
-        await saveDocument("construction_inquiries", leadId, activeCRMLead);
+      if (newLead) {
+        await saveDocument("construction_inquiries", leadId, newLead);
+      }
+      if (propertiesChanged && propertyToSaveId && propertyToSaveObj) {
+        await saveDocument("properties", propertyToSaveId, propertyToSaveObj);
       }
     }
   };
@@ -949,6 +997,20 @@ export default function App() {
 
     if (user) {
       await saveDocument("properties", newProperty.id, newProperty);
+    }
+  };
+
+  const handleUpdateProperty = async (propertyId: string, updates: Partial<Property>) => {
+    if (!db) return;
+    const updatedProperties = db.properties.map(p => p.id === propertyId ? { ...p, ...updates } : p);
+    const updatedDb = { ...db, properties: updatedProperties };
+    syncWithServer(updatedDb);
+    
+    if (user) {
+      const activeProperty = updatedProperties.find(p => p.id === propertyId);
+      if (activeProperty) {
+        await saveDocument("properties", propertyId, activeProperty);
+      }
     }
   };
 
@@ -1279,6 +1341,7 @@ export default function App() {
               onAddLog={addActivityLog}
               activeRole={activeRole}
               onAddProperty={handleAddProperty}
+              onUpdateProperty={handleUpdateProperty}
               onAddBuyerRequirement={handleAddBuyerRequirement}
             />
           )}
@@ -1328,6 +1391,7 @@ export default function App() {
                   tenantProfile={activeTenantProfile}
                   activeRole={activeRole}
                   profiles={db.profiles}
+                  properties={db.properties || []}
                   onAddCRMLead={handleAddCRMLead}
                   onUpdateCRMLead={handleUpdateCRMLead}
                   onDeleteCRMLead={handleDeleteCRMLead}

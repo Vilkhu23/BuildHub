@@ -8,6 +8,7 @@ interface PropertyViewProps {
   onAddLog: (log: string) => void;
   activeRole: 'Owner' | 'Manager' | 'Supervisor' | 'Telecaller';
   onAddProperty?: (property: Omit<Property, "id">) => void;
+  onUpdateProperty?: (propertyId: string, updates: Partial<Property>) => void;
   onAddBuyerRequirement?: (req: Omit<BuyerRequirement, "id" | "status">) => void;
 }
 
@@ -18,6 +19,7 @@ export default function PropertyView({
   onAddLog,
   activeRole,
   onAddProperty,
+  onUpdateProperty,
   onAddBuyerRequirement,
 }: PropertyViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -403,11 +405,32 @@ export default function PropertyView({
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
                   />
-                  <span className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider text-white shadow-xs ${
-                    prop.status === "Available" ? "bg-emerald-600" : "bg-amber-600"
-                  }`}>
-                    {prop.status}
-                  </span>
+                  {activeRole === "Owner" || activeRole === "Manager" || activeRole === "Supervisor" ? (
+                    <select
+                      value={prop.status}
+                      onChange={(e) => {
+                        const newStatus = e.target.value as "Available" | "Hold" | "Sold";
+                        if (onUpdateProperty) {
+                          onUpdateProperty(prop.id, { status: newStatus });
+                          onAddLog(`Updated property "${prop.title}" status to ${newStatus}.`);
+                        }
+                      }}
+                      className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider text-white shadow-xs appearance-none cursor-pointer border-none outline-none ${
+                        prop.status === "Available" ? "bg-emerald-600" : prop.status === "Hold" ? "bg-amber-500" : "bg-rose-600"
+                      }`}
+                      style={{ paddingRight: '20px' }}
+                    >
+                      <option value="Available">Available</option>
+                      <option value="Hold">Hold</option>
+                      <option value="Sold">Sold</option>
+                    </select>
+                  ) : (
+                    <span className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider text-white shadow-xs ${
+                      prop.status === "Available" ? "bg-emerald-600" : prop.status === "Hold" ? "bg-amber-500" : "bg-rose-600"
+                    }`}>
+                      {prop.status}
+                    </span>
+                  )}
                 </div>
 
                 {/* Details Section */}

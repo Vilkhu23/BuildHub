@@ -254,4 +254,5 @@ export interface CRMLead {
   logs: LeadActivityLog[];       // Audit log timeline matrix
   created_at: string;
   project_id?: string; // Unique primary key/reference code for business
+  linked_property_id?: string; // Links to a Property ID
 }

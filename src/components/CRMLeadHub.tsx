@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CRMLead, TenantProfile, Profile } from "../types";
+import { CRMLead, TenantProfile, Profile, Property } from "../types";
 import { triggerWhatsAppNotifications } from "../lib/whatsappLeadTrigger";
 import { CRMLeadEngine } from "../lib/CRMLeadEngine";
 import { validatePhoneNumber } from "../lib/validation";
@@ -11,6 +11,7 @@ interface CRMLeadHubProps {
   tenantProfile: TenantProfile;
   activeRole: 'Owner' | 'Manager' | 'Supervisor' | 'Telecaller';
   profiles?: Profile[];
+  properties?: Property[];
   onAddCRMLead: (lead: Omit<CRMLead, "id" | "created_at" | "tenant_id">) => void;
   onUpdateCRMLead: (leadId: string, updates: Partial<CRMLead>) => void;
   onDeleteCRMLead?: (leadId: string) => void;
@@ -22,6 +23,7 @@ export default function CRMLeadHub({
   tenantProfile,
   activeRole,
   profiles = [],
+  properties = [],
   onAddCRMLead,
   onUpdateCRMLead,
   onDeleteCRMLead,
@@ -571,7 +573,6 @@ export default function CRMLeadHub({
                 <th className="p-4 text-[10px] font-extrabold uppercase tracking-widest">Client Identity & Source</th>
                 <th className="p-4 text-[10px] font-extrabold uppercase tracking-widest">Inquiry Interest & Budget</th>
                 <th className="p-4 text-[10px] font-extrabold uppercase tracking-widest">Assigned Specialist</th>
-                <th className="p-4 text-[10px] font-extrabold uppercase tracking-widest">Follow-up Schedule</th>
                 <th className="p-4 text-[10px] font-extrabold uppercase tracking-widest">Status & Remarks</th>
                 <th className="p-4 text-[10px] font-extrabold uppercase tracking-widest text-right">Actions</th>
               </tr>
@@ -579,7 +580,7 @@ export default function CRMLeadHub({
             <tbody className="divide-y divide-slate-100 text-xs">
               {filteredLeads.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-12 text-center text-slate-400">
+                  <td colSpan={5} className="p-12 text-center text-slate-400">
                     <span className="material-symbols-outlined text-4xl block mb-2 text-slate-300">inbox</span>
                     <p className="font-extrabold uppercase text-[10px] tracking-wider">No matching inquiries found</p>
                     <p className="text-[11px] mt-1 text-slate-400 font-semibold">Try modifying your filter options or add a manual lead.</p>
@@ -723,77 +724,62 @@ export default function CRMLeadHub({
                           </div>
                         </td>
 
-                        {/* 4. Next Follow-up Picker with past-due crimson warning */}
+                        {/* 4. Status & Remarks interactive fields with embedded follow-up */}
                         <td className="p-4">
-                          <div className="flex flex-col space-y-1.5">
-                            <input
-                              type="date"
-                              value={lead.next_followup_date || ""}
-                              onChange={(e) => {
-                                const newDate = e.target.value;
-                                const newLog = {
-                                  id: `log-date-${Date.now()}`,
-                                  performed_by: activeRole,
-                                  action: `Scheduled next follow-up date for: ${newDate || "Cleared"}`,
-                                  timestamp: new Date().toISOString()
-                                };
-                                const updatedLogs = [...(lead.logs || []), newLog];
-                                onUpdateCRMLead(lead.id, { next_followup_date: newDate || undefined, logs: updatedLogs });
-                              }}
-                              className={`px-2 py-1.5 text-[10px] font-bold rounded-lg focus:outline-none focus:ring-1 transition-all cursor-pointer ${
-                                isOverdue
-                                  ? "bg-rose-50 border border-rose-300 text-rose-700 ring-1 ring-rose-400/30 focus:ring-rose-500"
-                                  : "bg-slate-50 border border-slate-200 text-slate-700 focus:ring-slate-900"
-                              }`}
-                            />
-                            {isOverdue ? (
-                              <span className="text-[9px] text-rose-600 font-black tracking-wide flex items-center gap-0.5 animate-pulse">
-                                <span className="material-symbols-outlined text-[10px] font-black">warning</span>
-                                <span>Follow-up Overdue!</span>
-                              </span>
-                            ) : lead.next_followup_date ? (
-                              <span className="text-[9px] text-emerald-600 font-extrabold tracking-wide flex items-center gap-0.5">
-                                <span className="material-symbols-outlined text-[10px] font-extrabold">schedule</span>
-                                <span>Scheduled</span>
-                              </span>
-                            ) : (
-                              <span className="text-[9px] text-slate-400 font-bold tracking-wide">
-                                No follow-up scheduled
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* 5. Status & Remarks interactive fields */}
-                        <td className="p-4">
-                          <div className="flex flex-col space-y-1.5 min-w-[200px]">
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className={`h-1.5 w-1.5 rounded-full ${
-                                lead.lead_status === "Won" ? "bg-emerald-500 animate-pulse" : lead.lead_status === "Lost" ? "bg-rose-500" : "bg-sky-500"
-                              }`} />
-                              <select
-                                value={lead.lead_status}
-                                onChange={(e) => {
-                                  const newStatus = e.target.value as CRMLead['lead_status'];
-                                  const currentText = localRemarks[lead.id] !== undefined ? localRemarks[lead.id] : (lead.remarks || "");
-                                  const newLog = {
-                                    id: `log-status-${Date.now()}`,
-                                    performed_by: activeRole,
-                                    action: `Changed status from "${lead.lead_status}" to "${newStatus}"`,
-                                    timestamp: new Date().toISOString()
-                                  };
-                                  const updatedLogs = [...(lead.logs || []), newLog];
-                                  onUpdateCRMLead(lead.id, { lead_status: newStatus, remarks: currentText, logs: updatedLogs });
-                                }}
-                                className={`border text-[10px] font-extrabold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-slate-900 cursor-pointer ${getStatusColor(lead.lead_status)}`}
-                              >
-                                <option value="New">📥 New</option>
-                                <option value="Contacted">⏳ Contacted</option>
-                                <option value="Quotation_Sent">📄 Quotation Sent</option>
-                                <option value="Won">👑 Won</option>
-                                <option value="Lost">❌ Lost</option>
-                              </select>
+                          <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl flex flex-col space-y-2 min-w-[220px]">
+                            <div className="flex items-center gap-1.5 shrink-0 justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`h-1.5 w-1.5 rounded-full ${
+                                  lead.lead_status === "Won" ? "bg-emerald-500 animate-pulse" : lead.lead_status === "Lost" ? "bg-rose-500" : "bg-sky-500"
+                                }`} />
+                                <select
+                                  value={lead.lead_status}
+                                  onChange={(e) => {
+                                    const newStatus = e.target.value as CRMLead['lead_status'];
+                                    const currentText = localRemarks[lead.id] !== undefined ? localRemarks[lead.id] : (lead.remarks || "");
+                                    const newLog = {
+                                      id: `log-status-${Date.now()}`,
+                                      performed_by: activeRole,
+                                      action: `Changed status from "${lead.lead_status}" to "${newStatus}"`,
+                                      timestamp: new Date().toISOString()
+                                    };
+                                    const updatedLogs = [...(lead.logs || []), newLog];
+                                    onUpdateCRMLead(lead.id, { lead_status: newStatus, remarks: currentText, logs: updatedLogs });
+                                  }}
+                                  className={`border text-[10px] font-extrabold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-slate-900 cursor-pointer ${getStatusColor(lead.lead_status)}`}
+                                >
+                                  <option value="New">📥 New</option>
+                                  <option value="Contacted">⏳ Contacted</option>
+                                  <option value="Quotation_Sent">📄 Quotation Sent</option>
+                                  <option value="Won">👑 Won</option>
+                                  <option value="Lost">❌ Lost</option>
+                                </select>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="date"
+                                  value={lead.next_followup_date || ""}
+                                  onChange={(e) => {
+                                    const newDate = e.target.value;
+                                    const newLog = {
+                                      id: `log-date-${Date.now()}`,
+                                      performed_by: activeRole,
+                                      action: `Scheduled next follow-up date for: ${newDate || "Cleared"}`,
+                                      timestamp: new Date().toISOString()
+                                    };
+                                    const updatedLogs = [...(lead.logs || []), newLog];
+                                    onUpdateCRMLead(lead.id, { next_followup_date: newDate || undefined, logs: updatedLogs });
+                                  }}
+                                  className={`px-1.5 py-1 text-[9px] font-bold rounded-md focus:outline-none focus:ring-1 transition-all cursor-pointer ${
+                                    isOverdue
+                                      ? "bg-rose-50 border border-rose-300 text-rose-700 ring-1 ring-rose-400/30 focus:ring-rose-500"
+                                      : "bg-white border border-slate-200 text-slate-700 focus:ring-slate-900"
+                                  }`}
+                                  title={isOverdue ? "Follow-up Overdue!" : "Next Follow-up"}
+                                />
+                              </div>
                             </div>
+
                             <input
                               type="text"
                               value={localRemarks[lead.id] !== undefined ? localRemarks[lead.id] : (lead.remarks || "")}
@@ -820,8 +806,68 @@ export default function CRMLeadHub({
                                 }
                               }}
                               placeholder="Add follow-up notes..."
-                              className="w-full text-[10px] font-semibold text-slate-700 bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white rounded-lg px-2.5 py-1.5 outline-none transition-all placeholder:text-slate-400"
+                              className="w-full text-[10px] font-semibold text-slate-700 bg-white border border-slate-200 focus:border-emerald-500 rounded-lg px-2 py-1.5 outline-none transition-all placeholder:text-slate-400"
                             />
+
+                            <div className="pt-1 border-t border-slate-200/60 mt-1">
+                              {lead.linked_property_id ? (
+                                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1">
+                                  <span className="text-[9px] font-bold text-emerald-800 truncate" title={lead.project_interest}>
+                                    Linked: {lead.project_interest}
+                                  </span>
+                                  <button 
+                                    onClick={() => {
+                                      const newLog = {
+                                        id: `log-unlink-${Date.now()}`,
+                                        performed_by: activeRole,
+                                        action: `Unlinked property`,
+                                        timestamp: new Date().toISOString()
+                                      };
+                                      onUpdateCRMLead(lead.id, {
+                                        linked_property_id: "",
+                                        project_interest: "General Inquiry",
+                                        budget_tier: "",
+                                        logs: [...(lead.logs || []), newLog]
+                                      });
+                                    }}
+                                    className="ml-1 text-[10px] text-rose-500 hover:text-rose-700 font-black"
+                                    title="Unlink Property"
+                                  >
+                                    <span className="material-symbols-outlined text-[11px]">close</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <select
+                                  onChange={(e) => {
+                                    const selectedPropId = e.target.value;
+                                    const property = properties.find(p => p.id === selectedPropId);
+                                    if (property) {
+                                      const newLog = {
+                                        id: `log-prop-${Date.now()}`,
+                                        performed_by: activeRole,
+                                        action: `Allocated property: ${property.title}`,
+                                        timestamp: new Date().toISOString()
+                                      };
+                                      onUpdateCRMLead(lead.id, {
+                                        linked_property_id: property.id,
+                                        project_interest: property.title,
+                                        budget_tier: property.target_selling_price.toString() + ' (Linked)',
+                                        logs: [...(lead.logs || []), newLog]
+                                      });
+                                    }
+                                  }}
+                                  value={lead.linked_property_id || ""}
+                                  className="w-full text-[9px] font-bold text-slate-700 bg-emerald-50 border border-emerald-200 focus:border-emerald-500 rounded-md px-2 py-1 outline-none transition-all cursor-pointer"
+                                >
+                                  <option value="">🏠 Allocate Available Property</option>
+                                  {properties.filter(p => p.status === "Available").map(p => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.title} (₹{(p.target_selling_price / 100000).toFixed(1)}L)
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
                           </div>
                         </td>
 
